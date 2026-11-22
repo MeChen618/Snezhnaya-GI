@@ -199,6 +199,7 @@ pub fn spawn_suite_entities(
 pub fn despawn_suite_entities(
     mut despawn_suite_events: MessageReader<DespawnSuiteEntitiesEvent>,
     mut commands: Commands,
+    world_owner_uid: Res<WorldOwnerUID>,
     mut entities: Query<(Entity, &ProtocolEntityID, &GroupId, &ConfigId)>,
     mut disappear_events: MessageWriter<EntityDisappearEvent>,
 ) {
@@ -234,6 +235,12 @@ pub fn despawn_suite_entities(
                     entity_id.0,
                     VisionType::VisionMiss.into(),
                 ));
+                get_group_entity_state_cache().on_entity_despawn(
+                    world_owner_uid.0,
+                    event.group_id,
+                    config_id.0,
+                    entity_id.0,
+                );
                 commands.entity(entity).insert(ToBeRemovedMarker);
 
                 tracing::debug!(
@@ -468,19 +475,28 @@ pub fn spawn_group_entity(
 
 pub fn despawn_group_entity(
     mut commands: Commands,
+    world_owner_uid: Res<WorldOwnerUID>,
     mut despawn_group_entity_event: MessageReader<DespawnGroupEntityEvent>,
-    mut entities: Query<(Entity, &ProtocolEntityID, &GroupId)>,
+    mut entities: Query<(Entity, &ProtocolEntityID, &GroupId, Option<&ConfigId>)>,
     mut disappear_events: MessageWriter<EntityDisappearEvent>,
 ) {
     for event in despawn_group_entity_event.read() {
         entities
             .iter_mut()
-            .filter(|(_, _, group_id)| group_id.0 == event.group_id)
-            .for_each(|(entity, entity_id, _)| {
+            .filter(|(_, _, group_id, _)| group_id.0 == event.group_id)
+            .for_each(|(entity, entity_id, _, config_id)| {
                 disappear_events.write(EntityDisappearEvent(
                     entity_id.0,
                     VisionType::VisionMiss.into(),
                 ));
+                if let Some(config_id) = config_id {
+                    get_group_entity_state_cache().on_entity_despawn(
+                        world_owner_uid.0,
+                        event.group_id,
+                        config_id.0,
+                        entity_id.0,
+                    );
+                }
                 commands.entity(entity).insert(ToBeRemovedMarker);
             });
     }
@@ -492,7 +508,7 @@ pub fn refresh_group_entity(
     mut entity_counter: ResMut<EntityCounter>,
     world_owner_uid: Res<WorldOwnerUID>,
     world_version_config: Res<WorldVersionConfig>,
-    mut entities: Query<(Entity, &ProtocolEntityID, &GroupId)>,
+    mut entities: Query<(Entity, &ProtocolEntityID, &GroupId, Option<&ConfigId>)>,
     mut lua_trigger_events: MessageWriter<LuaTriggerEvent>,
     mut disappear_events: MessageWriter<EntityDisappearEvent>,
 ) {
@@ -512,12 +528,20 @@ pub fn refresh_group_entity(
 
         entities
             .iter_mut()
-            .filter(|(_, _, g_id)| g_id.0 == group_id)
-            .for_each(|(entity, entity_id, _)| {
+            .filter(|(_, _, g_id, _)| g_id.0 == group_id)
+            .for_each(|(entity, entity_id, _, config_id)| {
                 disappear_events.write(EntityDisappearEvent(
                     entity_id.0,
                     VisionType::VisionMiss.into(),
                 ));
+                if let Some(config_id) = config_id {
+                    get_group_entity_state_cache().on_entity_despawn(
+                        world_owner_uid.0,
+                        group_id,
+                        config_id.0,
+                        entity_id.0,
+                    );
+                }
                 commands.entity(entity).insert(ToBeRemovedMarker);
             });
 

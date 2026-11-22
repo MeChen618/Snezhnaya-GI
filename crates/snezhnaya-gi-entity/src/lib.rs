@@ -294,6 +294,7 @@ fn update_entity_life_state(
                     world_owner_uid.0,
                     group_id.0,
                     config_id.0,
+                    id.0,
                     *life_state as u32,
                     cur_hp,
                     max_hp,
@@ -341,6 +342,7 @@ fn update_entity_life_state(
                     world_owner_uid.0,
                     group_id.0,
                     config_id.0,
+                    id.0,
                     *life_state as u32,
                     cur_hp,
                     max_hp,
@@ -401,10 +403,29 @@ fn despawn_monster_equipment(
 fn remove_marked_entities(
     mut index: ResMut<EntityById>,
     mut commands: Commands,
-    entities: Query<Entity, With<ToBeRemovedMarker>>,
+    owner: Res<WorldOwnerUID>,
+    entities: Query<
+        (
+            Entity,
+            Option<&ProtocolEntityID>,
+            Option<&common::GroupId>,
+            Option<&common::ConfigId>,
+        ),
+        With<ToBeRemovedMarker>,
+    >,
 ) {
-    entities.iter().for_each(|entity| {
-        index.0.retain(|_, e| *e != entity);
+    let cache = snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache();
+    entities.iter().for_each(|(entity, id, group, config)| {
+        if let Some(id) = id {
+            if index.0.get(&id.0) == Some(&entity) {
+                index.0.remove(&id.0);
+            }
+            if let (Some(group), Some(config)) = (group, config) {
+                cache.on_entity_despawn(owner.0, group.0, config.0, id.0);
+            }
+        } else {
+            index.0.retain(|_, value| *value != entity);
+        }
         commands.entity(entity).despawn()
     });
 }

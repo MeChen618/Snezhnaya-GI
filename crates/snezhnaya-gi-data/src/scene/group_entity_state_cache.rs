@@ -52,8 +52,7 @@ impl GroupEntityStateCache {
         &self,
         uid: u32,
     ) -> dashmap::mapref::one::Ref<'_, u32, UserGroupStateCache> {
-        self.user_caches.entry(uid).or_default();
-        self.user_caches.get(&uid).unwrap()
+        self.user_caches.entry(uid).or_default().downgrade()
     }
 
     pub fn clear_user_cache(&self, uid: u32) {
@@ -113,6 +112,7 @@ impl GroupEntityStateCache {
         uid: u32,
         group_id: u32,
         config_id: u32,
+        entity_id: u32,
         life_state: u32,
         cur_hp: f32,
         max_hp: f32,
@@ -120,6 +120,9 @@ impl GroupEntityStateCache {
         if let Some(user_cache) = self.user_caches.get(&uid) {
             if let Some(group_state) = user_cache.group_states.get(&group_id) {
                 if let Some(mut monster_state) = group_state.monsters.get_mut(&config_id) {
+                    if monster_state.entity_id != entity_id {
+                        return;
+                    }
                     monster_state.life_state = life_state;
                     monster_state.cur_hp = cur_hp;
                     monster_state.max_hp = max_hp;
@@ -133,6 +136,7 @@ impl GroupEntityStateCache {
         uid: u32,
         group_id: u32,
         config_id: u32,
+        entity_id: u32,
         life_state: u32,
         cur_hp: f32,
         max_hp: f32,
@@ -140,6 +144,9 @@ impl GroupEntityStateCache {
         if let Some(user_cache) = self.user_caches.get(&uid) {
             if let Some(group_state) = user_cache.group_states.get(&group_id) {
                 if let Some(mut gadget_state) = group_state.gadgets.get_mut(&config_id) {
+                    if gadget_state.entity_id != entity_id {
+                        return;
+                    }
                     gadget_state.life_state = life_state;
                     gadget_state.cur_hp = cur_hp;
                     gadget_state.max_hp = max_hp;
@@ -192,7 +199,7 @@ impl GroupEntityStateCache {
                 return group_state
                     .monsters
                     .iter()
-                    .filter(|m| m.life_state == 1)
+                    .filter(|m| m.life_state == 1 && m.entity_id != 0)
                     .count() as u32;
             }
         }
@@ -201,6 +208,57 @@ impl GroupEntityStateCache {
 
     pub fn is_all_monsters_dead(&self, uid: u32, group_id: u32) -> bool {
         self.get_alive_monster_count(uid, group_id) == 0
+    }
+
+    pub fn get_entity_id(&self, uid: u32, group_id: u32, config_id: u32) -> Option<u32> {
+        let user = self.user_caches.get(&uid)?;
+        let group = user.group_states.get(&group_id)?;
+        group
+            .monsters
+            .get(&config_id)
+            .map(|state| state.entity_id)
+            .filter(|id| *id != 0)
+            .or_else(|| {
+                group
+                    .gadgets
+                    .get(&config_id)
+                    .map(|state| state.entity_id)
+                    .filter(|id| *id != 0)
+            })
+    }
+
+    pub fn get_gadget_config_id(&self, uid: u32, entity_id: u32) -> Option<u32> {
+        if entity_id == 0 {
+            return None;
+        }
+        let user = self.user_caches.get(&uid)?;
+        let config_id = user.group_states.iter().find_map(|group| {
+            group
+                .gadgets
+                .iter()
+                .find_map(|state| (state.entity_id == entity_id).then_some(state.config_id))
+        });
+        config_id
+    }
+
+    pub fn on_entity_despawn(&self, uid: u32, group_id: u32, config_id: u32, entity_id: u32) {
+        let Some(user) = self.user_caches.get(&uid) else {
+            return;
+        };
+        let Some(group) = user.group_states.get(&group_id) else {
+            return;
+        };
+        // 旧实体的延迟清理不能覆盖同配置号的新实体。
+        if let Some(mut monster) = group.monsters.get_mut(&config_id) {
+            if monster.entity_id == entity_id {
+                monster.entity_id = 0;
+            }
+        }
+        if let Some(mut gadget) = group.gadgets.get_mut(&config_id) {
+            if gadget.entity_id == entity_id {
+                gadget.entity_id = 0;
+            }
+        };
     }
 
     pub fn remove_group(&self, uid: u32, group_id: u32) {

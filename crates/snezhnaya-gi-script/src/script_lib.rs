@@ -24,6 +24,8 @@ pub trait ScriptLib: Send + Sync + 'static {
     // gadget state methods
     fn get_gadget_state_by_config_id(&self, uid: u32, group_id: u32, config_id: u32) -> i32;
     fn set_gadget_state_by_config_id(&self, uid: u32, group_id: u32, config_id: u32, state: u32);
+    fn get_entity_id_by_config_id(&self, uid: u32, group_id: u32, config_id: u32) -> u32;
+    fn get_gadget_config_id(&self, uid: u32, entity_id: u32) -> Option<u32>;
 
     fn get_group_monster_count_by_config_id(&self, uid: u32, group_id: u32) -> i32;
 
@@ -331,6 +333,17 @@ impl ScriptLib for BevyScriptLib {
             config_id,
             state,
         });
+    }
+
+    fn get_entity_id_by_config_id(&self, uid: u32, group_id: u32, config_id: u32) -> u32 {
+        snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache()
+            .get_entity_id(uid, group_id, config_id)
+            .unwrap_or(0)
+    }
+
+    fn get_gadget_config_id(&self, uid: u32, entity_id: u32) -> Option<u32> {
+        snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache()
+            .get_gadget_config_id(uid, entity_id)
     }
 
     fn get_group_monster_count_by_config_id(&self, uid: u32, group_id: u32) -> i32 {

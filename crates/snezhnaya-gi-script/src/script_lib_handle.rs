@@ -1535,16 +1535,22 @@ impl UserData for LuaScriptLibHandle {
 
         methods.add_method(
             "GetEntityIdByConfigId",
-            |_, _this, (_ctx, _config_id): (Table, u32)| {
-                tracing::debug!("GetEntityIdByConfigId called");
-                Ok(0)
+            |_, this, (ctx, config_id): (Table, u32)| {
+                Ok(this.script_lib.get_entity_id_by_config_id(
+                    ctx.get("uid")?,
+                    ctx.get("group_id")?,
+                    config_id,
+                ))
             },
         );
 
-        methods.add_method("GetEntityType", |_, this, entity_id: u32| {
-            tracing::debug!("GetEntityType called");
-            Ok(entity_id >> get_ty_value_by_version(this.protocol_version.as_str()))
-        });
+        methods.add_method(
+            "GetEntityType",
+            |_, this, (_ctx, entity_id): (Table, u32)| {
+                tracing::debug!("GetEntityType called");
+                Ok(entity_id >> get_ty_value_by_version(this.protocol_version.as_str()))
+            },
+        );
 
         methods.add_method(
             "GetExhibitionAccumulableData",
@@ -1614,9 +1620,12 @@ impl UserData for LuaScriptLibHandle {
 
         methods.add_method(
             "GetGadgetConfigId",
-            |_, _this, (_ctx, _param_table): (Table, Table)| {
-                tracing::debug!("GetGadgetConfigId called");
-                Ok(0)
+            |_, this, (ctx, params): (Table, Table)| {
+                Ok(this
+                    .script_lib
+                    .get_gadget_config_id(ctx.get("uid")?, params.get("gadget_eid")?)
+                    .map(i64::from)
+                    .unwrap_or(-1))
             },
         );
 
