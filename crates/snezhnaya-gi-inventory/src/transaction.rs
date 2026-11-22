@@ -1,5 +1,9 @@
 use rand::seq::SliceRandom;
-use snezhnaya_gi_data::{excel::common::ItemType, excel::*, prop_type::*};
+use snezhnaya_gi_data::{
+    excel::common::{ItemType, MaterialType},
+    excel::*,
+    prop_type::*,
+};
 use snezhnaya_gi_message::output::MessageOutput;
 use snezhnaya_gi_proto::{
     normal::*,
@@ -20,6 +24,8 @@ pub struct InventoryChange {
     pub removed: Vec<u64>,
     pub added: Vec<u64>,
     pub rewards: Amounts,
+    pub resin_changed: bool,
+    pub unlocked_name_cards: Vec<u32>,
 }
 
 pub fn add_amount(items: &mut Amounts, id: u32, count: u32) -> InventoryResult<()> {
@@ -52,6 +58,7 @@ pub fn scale_items(items: &[production::ItemAmount], count: u32) -> InventoryRes
 
 fn currency(items: &PlayerItemCompBin, id: u32) -> Option<u32> {
     match id {
+        106 => Some(items.resin_record.as_ref().map_or(0, |r| r.value)),
         201 => Some(items.hcoin),
         202 => Some(items.scoin),
         203 => Some(items.mcoin),
@@ -62,6 +69,12 @@ fn currency(items: &PlayerItemCompBin, id: u32) -> Option<u32> {
 
 fn currency_mut(items: &mut PlayerItemCompBin, id: u32) -> Option<&mut u32> {
     match id {
+        106 => Some(
+            &mut items
+                .resin_record
+                .get_or_insert_with(Default::default)
+                .value,
+        ),
         201 => Some(&mut items.hcoin),
         202 => Some(&mut items.scoin),
         203 => Some(&mut items.mcoin),
@@ -94,7 +107,64 @@ pub fn transact(
     rewards: &Amounts,
     remove: &[u64],
 ) -> InventoryResult<InventoryChange> {
+    transact_inner(
+        player,
+        costs,
+        rewards,
+        remove,
+        None,
+        crate::consumables::timestamp(),
+    )
+}
+
+pub(super) fn transact_at(
+    player: &mut PlayerDataBin,
+    costs: &Amounts,
+    rewards: &Amounts,
+    now: u32,
+) -> InventoryResult<InventoryChange> {
+    transact_inner(player, costs, rewards, &[], None, now)
+}
+
+pub(super) fn consume_item(
+    player: &mut PlayerDataBin,
+    guid: u64,
+    count: u32,
+    rewards: &Amounts,
+) -> InventoryResult<InventoryChange> {
+    let item = player
+        .item_bin
+        .as_ref()
+        .and_then(|items| items.get_item(&guid))
+        .ok_or(Retcode::RetItemNotExist)?;
+    let Some(item_bin::Detail::Material(material)) = &item.detail else {
+        return Err(Retcode::RetItemNotUsable);
+    };
+    if count == 0 || material.count < count {
+        return Err(Retcode::RetItemCountNotEnough);
+    }
+    let id = item.item_id;
+    transact_inner(
+        player,
+        &Amounts::from([(id, count)]),
+        rewards,
+        &[],
+        Some(guid),
+        crate::consumables::timestamp(),
+    )
+}
+
+fn transact_inner(
+    player: &mut PlayerDataBin,
+    costs: &Amounts,
+    rewards: &Amounts,
+    remove: &[u64],
+    preferred_material: Option<u64>,
+    now: u32,
+) -> InventoryResult<InventoryChange> {
     let mut items = player.item_bin.clone().ok_or(Retcode::RetItemNotExist)?;
+    let resin_before = items.resin_record;
+    crate::consumables::refresh_resin(&mut items, now);
     let before = items
         .pack_store
         .as_ref()
@@ -138,10 +208,12 @@ pub fn transact(
             continue;
         }
         if item_count(&items, id) < count {
-            return Err(if id == 202 {
-                Retcode::RetScoinNotEnough
-            } else {
-                Retcode::RetItemCountNotEnough
+            return Err(match id {
+                106 => Retcode::RetResinNotEnough,
+                201 => Retcode::RetHcoinNotEnough,
+                202 => Retcode::RetScoinNotEnough,
+                203 => Retcode::RetMcoinNotEnough,
+                _ => Retcode::RetItemCountNotEnough,
             });
         }
         if let Some(value) = currency_mut(&mut items, id) {
@@ -154,7 +226,8 @@ pub fn transact(
             .filter(|(_, item)| item.item_id == id)
             .map(|(guid, _)| *guid)
             .collect();
-        guids.sort_unstable();
+        // 使用道具时优先扣请求里的那一叠，制作等操作仍按 GUID 扣除。
+        guids.sort_unstable_by_key(|guid| (Some(*guid) != preferred_material, *guid));
         for guid in guids {
             if let Some(ItemBin {
                 detail: Some(item_bin::Detail::Material(material)),
@@ -205,13 +278,43 @@ pub fn transact(
             continue;
         }
         if let Some(value) = currency_mut(&mut items, id) {
+            let limit = if id == 106 {
+                production::ProductionConfig::get().resin.max_value
+            } else {
+                i32::MAX as u32
+            };
             *value = value
                 .checked_add(count)
-                .filter(|v| *v <= i32::MAX as u32)
-                .ok_or(Retcode::RetVirtualExceedLimit)?;
+                .filter(|v| *v <= limit)
+                .ok_or(if id == 106 {
+                    Retcode::RetResinExceedLimit
+                } else {
+                    Retcode::RetVirtualExceedLimit
+                })?;
             continue;
         }
         if let Some(config) = material_excel_config_collection::get().get(&id) {
+            if config.item_type == ItemType::MATERIAL
+                && config.use_on_gain
+                && config.material_type == MaterialType::Namecard
+                && config
+                    .item_use
+                    .iter()
+                    .any(|op| op.use_op == ItemUseOp::GainNameCard)
+                && config
+                    .item_use
+                    .iter()
+                    .all(|op| matches!(op.use_op, ItemUseOp::GainNameCard | ItemUseOp::None))
+            {
+                if !player
+                    .social_bin
+                    .as_ref()
+                    .is_some_and(|s| s.unlock_name_card_list.contains(&id))
+                {
+                    change.unlocked_name_cards.push(id);
+                }
+                continue;
+            }
             if config.item_type != ItemType::MATERIAL || config.use_on_gain {
                 return Err(Retcode::RetNotSupportItem);
             }
@@ -281,8 +384,17 @@ pub fn transact(
         .filter(|guid| items.get_item(guid).is_none())
         .copied()
         .collect();
+    crate::consumables::refresh_resin(&mut items, now);
+    change.resin_changed = resin_before != items.resin_record;
     player.item_bin = Some(items);
     player.guid_counter = counter;
+    if !change.unlocked_name_cards.is_empty() {
+        player
+            .social_bin
+            .get_or_insert_with(Default::default)
+            .unlock_name_card_list
+            .extend(change.unlocked_name_cards.iter().copied());
+    }
     if let Some((level, exp)) = experience {
         let basic = player.basic_bin.as_mut().unwrap();
         basic.level = level;
@@ -400,6 +512,16 @@ pub fn notify_transaction(
             },
         );
     }
+    for &name_card_id in &change.unlocked_name_cards {
+        output.send(
+            player.uid,
+            "UnlockNameCardNotify",
+            UnlockNameCardNotify { name_card_id },
+        );
+    }
+    if change.resin_changed {
+        crate::consumables::notify_resin(player, output);
+    }
     let mut properties = currency_properties(items);
     if let Some(basic) = &player.basic_bin {
         for (id, value) in [
@@ -445,6 +567,10 @@ pub fn notify_transaction(
 
 pub fn currency_properties(items: &PlayerItemCompBin) -> HashMap<u32, PropValue> {
     [
+        (
+            PROP_PLAYER_RESIN,
+            items.resin_record.as_ref().map_or(0, |r| r.value),
+        ),
         (PROP_PLAYER_HCOIN, items.hcoin),
         (PROP_PLAYER_SCOIN, items.scoin),
         (PROP_PLAYER_MCOIN, items.mcoin),

@@ -331,9 +331,8 @@ pub fn decode_json_by_name_version(
     message_name: &str,
     body: &[u8],
 ) -> Option<serde_json::Value> {
-    decode_value_by_name_version(version, message_name, body)?
-        .deserialize_into()
-        .ok()
+    // JSON 对象的键只能是字符串，不能直接反序列化带数字键的协议 map。
+    serde_json::to_value(decode_value_by_name_version(version, message_name, body)?).ok()
 }
 
 fn decode_value_by_name_version(

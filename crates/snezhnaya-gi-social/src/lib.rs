@@ -6,11 +6,14 @@ use snezhnaya_gi_message::output::MessageOutput;
 use snezhnaya_gi_proto::retcode::Retcode;
 use snezhnaya_gi_proto::normal::{FriendBrief, GetPlayerFriendListRsp, PrivateChatReq, ProfilePicture};
 
+mod profile;
+
 pub struct SocialPlugin;
 
 impl Plugin for SocialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, handle_chat);
+        app.add_systems(PreStartup, profile::login)
+            .add_systems(Update, (handle_chat, profile::handle));
     }
 }
 

@@ -19490,6 +19490,9 @@ pub struct PlayerSocialCompBin {
     #[prost(uint32, repeated, tag = "22")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub shield_channel_set: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bool, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub is_show_constellation_num: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

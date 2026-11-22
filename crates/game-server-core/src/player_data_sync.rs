@@ -53,7 +53,7 @@ pub fn sync_player_data(players: Res<Players>, message_output: Res<MessageOutput
                     PROP_PLAYER_EXP: player_basic_bin.exp;
                     PROP_PLAYER_MP_SETTING_TYPE :1;
                     PROP_IS_MP_MODE_AVAILABLE :1;
-                    PROP_PLAYER_RESIN:200;
+                    PROP_PLAYER_RESIN:items.resin_record.as_ref().map_or(0, |r| r.value);
                     PROP_IS_DIVEABLE :1;
                     PROP_CUR_PHLOGISTON :10000;
                     PROP_PLAYER_HCOIN :items.hcoin;

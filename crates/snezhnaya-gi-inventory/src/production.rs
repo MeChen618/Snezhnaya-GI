@@ -296,7 +296,6 @@ pub fn handle(
                 cook_args
             ),
             "PlayerCookReq" => respond!(PlayerCookReq, PlayerCookRsp, "PlayerCookRsp", cook),
-            "UseItemReq" => respond!(UseItemReq, UseItemRsp, "UseItemRsp", use_recipe),
             "GetCompoundDataReq" => output.send(
                 uid,
                 "GetCompoundDataRsp",
@@ -323,7 +322,7 @@ pub fn handle(
     }
 }
 
-fn use_recipe(
+pub(super) fn use_recipe(
     player: &mut PlayerDataBin,
     request: &UseItemReq,
     output: &MessageOutput,
@@ -381,12 +380,8 @@ fn use_recipe(
         }
         _ => return Err(Retcode::RetItemNotUsable),
     }
-    execute(
-        player,
-        &Amounts::from([(item_id, 1)]),
-        &Amounts::new(),
-        output,
-    )?;
+    let change = consume_item(player, request.guid, 1, &Amounts::new())?;
+    notify_transaction(output, player, &change);
     player
         .cook_bin
         .get_or_insert_with(Default::default)

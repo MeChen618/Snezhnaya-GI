@@ -91,8 +91,54 @@ impl ReliquaryPurchaseRecipe {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug)]
+pub struct ResinParameters {
+    pub max_value: u32,
+    pub recover_limit: u32,
+    pub recover_interval: u32,
+    pub buy_value: u32,
+    pub buy_costs: Vec<u32>,
+}
+
+impl ResinParameters {
+    fn load(constants: &HashMap<String, Vec<String>>) -> io::Result<Self> {
+        let invalid = || {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid CONST_VALUE_RESIN_PARAM",
+            )
+        };
+        let values = constants
+            .get("CONST_VALUE_RESIN_PARAM")
+            .ok_or_else(invalid)?;
+        let number = |index: usize| -> io::Result<u32> {
+            values
+                .get(index)
+                .and_then(|v| v.parse().ok())
+                .filter(|v| *v > 0)
+                .ok_or_else(invalid)
+        };
+        let config = Self {
+            max_value: number(0)?,
+            recover_limit: number(1)?,
+            recover_interval: number(2)?.checked_mul(60).ok_or_else(invalid)?,
+            buy_value: number(3)?,
+            buy_costs: values
+                .get(4)
+                .ok_or_else(invalid)?
+                .split(',')
+                .map(|s| s.parse::<u32>().ok().filter(|v| *v > 0).ok_or_else(invalid))
+                .collect::<io::Result<_>>()?,
+        };
+        if config.recover_limit > config.max_value || config.buy_value > config.max_value {
+            return Err(invalid());
+        }
+        Ok(config)
+    }
+}
+
 pub struct ProductionConfig {
+    pub resin: ResinParameters,
     pub combine: HashMap<u32, CombineRecipe>,
     pub forge: HashMap<u32, ForgeRecipe>,
     pub cook: HashMap<u32, CookRecipe>,
@@ -174,6 +220,7 @@ impl ProductionConfig {
             })
             .collect::<io::Result<Vec<_>>>()?;
         let config = Self {
+            resin: ResinParameters::load(&constants)?,
             combine: read::<CombineRecipe>(path, "CombineExcelConfigData")?
                 .into_iter()
                 .map(|r| (r.combine_id, r))

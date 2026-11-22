@@ -192,9 +192,10 @@ pub enum ItemUseOp {
     MusicGameBookUnlockTheme,
 
     #[serde(alias = "ITEM_USE_NONE")]
-    #[serde(other)]
     #[default]
     None,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

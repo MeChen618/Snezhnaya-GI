@@ -3006,6 +3006,7 @@ message PlayerSocialCompBin {
   ChatEmojiCollectionBin chat_emoji_collection = 20;
   ContentAuditBin signature_audit_bin = 21;
   repeated uint32 shield_channel_set = 22;
+  bool is_show_constellation_num = 10001;
 }
 
 message SecurityAntiOfflineDataBin {

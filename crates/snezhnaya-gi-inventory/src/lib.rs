@@ -1,6 +1,7 @@
 use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 
+mod consumables;
 mod equip;
 mod gm;
 mod item;
@@ -13,21 +14,29 @@ pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, (production::login, reliquary::login).chain())
-            .add_systems(PreUpdate, equip::change_avatar_equip)
-            .add_systems(
-                Update,
-                (
-                    production::handle,
-                    reliquary::handle,
-                    shop::handle,
-                    item::item_command_handler,
-                    item::item_add_handler,
-                    item::update_player_store,
-                )
-                    .chain(),
+        app.init_resource::<consumables::ResinWakeup>();
+        app.add_systems(PostUpdate, consumables::tick);
+        app.add_systems(
+            PreStartup,
+            (production::login, reliquary::login, consumables::login).chain(),
+        )
+        .add_systems(PreUpdate, equip::change_avatar_equip)
+        .add_systems(
+            Update,
+            (
+                consumables::handle,
+                production::handle,
+                reliquary::handle,
+                shop::handle,
+                item::item_command_handler,
+                item::item_add_handler,
+                item::update_player_store,
             )
-            .add_systems(Update, item::item_drop_handler)
-            .add_systems(Update, gm::weapon_command_handler);
+                .chain(),
+        )
+        .add_systems(Update, item::item_drop_handler)
+        .add_systems(Update, gm::weapon_command_handler);
     }
 }
+
+pub use consumables::next_wakeup;
