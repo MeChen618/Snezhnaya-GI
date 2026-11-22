@@ -2657,6 +2657,7 @@ dependencies = [
  "snezhnaya-gi-data",
  "snezhnaya-gi-entity",
  "snezhnaya-gi-event",
+ "snezhnaya-gi-inventory",
  "snezhnaya-gi-message",
  "snezhnaya-gi-persistence",
  "snezhnaya-gi-proto",

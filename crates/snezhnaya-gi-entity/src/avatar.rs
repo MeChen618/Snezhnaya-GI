@@ -391,7 +391,10 @@ fn build_fake_avatar_entity_info(
             core_proud_skill_level: skill_depot.core_proud_skill_level,
             inherent_proud_skill_list: skill_depot.inherent_proud_skill_list.clone(),
             skill_level_map: skill_depot.skill_level_map.clone(),
-            proud_skill_extra_level_map: HashMap::with_capacity(0),
+            proud_skill_extra_level_map: snezhnaya_gi_data::config::proud_skill_extra_levels(
+                avatar_bin.skill_depot_id,
+                &skill_depot.talent_id_list,
+            ),
             server_buff_list: Vec::with_capacity(0),
             team_resonance_list: Vec::with_capacity(0),
             wearing_flycloak_id: avatar_bin.wearing_flycloak_id,
@@ -484,7 +487,10 @@ pub fn build_avatar_entity_info(
             core_proud_skill_level: avatar_data.core_proud_skill_level.0,
             inherent_proud_skill_list: avatar_data.inherent_proud_skill_list.0.clone(),
             skill_level_map: avatar_data.skill_level_map.0.clone(),
-            proud_skill_extra_level_map: HashMap::with_capacity(0),
+            proud_skill_extra_level_map: snezhnaya_gi_data::config::proud_skill_extra_levels(
+                avatar_bin.skill_depot_id,
+                &avatar_data.talent_id_list.0,
+            ),
             server_buff_list: Vec::with_capacity(0),
             team_resonance_list: Vec::with_capacity(0),
             wearing_flycloak_id: avatar_data.appearance.flycloak_id,
@@ -617,7 +623,11 @@ pub fn spawn_avatar_entity(
         instanced_abilities: instanced,
         instanced_modifiers: InstancedModifiers::default(),
         global_ability_values: GlobalAbilityValues::default(),
-        life_state: LifeState::Alive,
+        life_state: if avatar_bin.cur_hp > 0.0 {
+            LifeState::Alive
+        } else {
+            LifeState::Dead
+        },
         avatar_equipment_weapon: AvatarEquipmentWeapon(weapon_entity),
         appearance: AvatarAppearance {
             flycloak_id: avatar_bin.wearing_flycloak_id,
@@ -645,4 +655,28 @@ pub fn spawn_avatar_entity(
     });
 
     Some((avatar_entity.id(), weapon_entity))
+}
+
+pub fn sync_avatar_state(
+    avatars: Query<
+        (&Guid, &OwnerPlayerUID, &FightProperties, &LifeState),
+        Or<(Changed<FightProperties>, Changed<LifeState>)>,
+    >,
+    mut players: ResMut<Players>,
+) {
+    for (guid, owner, props, life) in &avatars {
+        let Some(avatar) = players
+            .get_mut(owner.0)
+            .and_then(|player| player.avatar_bin.as_mut())
+            .and_then(|bin| bin.avatar_map.get_mut(&guid.0))
+        else {
+            continue;
+        };
+        avatar.cur_hp =
+            props.get_property(snezhnaya_gi_data::prop_type::FightPropType::FIGHT_PROP_CUR_HP);
+        avatar.life_state = *life as u32;
+        if let Some((current, _)) = avatar_energy_props(avatar) {
+            avatar.cur_elem_energy = props.get_property(current);
+        }
+    }
 }

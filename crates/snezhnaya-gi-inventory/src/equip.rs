@@ -9,8 +9,9 @@ use snezhnaya_gi_event::avatar::AvatarEquipChangeEvent;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::{
-    ReliquaryUpgradeReq, ReliquaryUpgradeRsp, TakeoffEquipReq, TakeoffEquipRsp, WeaponUpgradeReq,
-    WeaponUpgradeRsp, WearEquipReq, WearEquipRsp,
+    ReliquaryUpgradeReq, ReliquaryUpgradeRsp, TakeoffEquipReq, TakeoffEquipRsp, WeaponAwakenReq,
+    WeaponAwakenRsp, WeaponPromoteReq, WeaponPromoteRsp, WeaponUpgradeReq, WeaponUpgradeRsp,
+    WearEquipReq, WearEquipRsp,
 };
 use snezhnaya_gi_proto::retcode::Retcode;
 use snezhnaya_gi_proto::server_only::{equip_bin, item_bin};
@@ -271,6 +272,46 @@ pub fn change_avatar_equip(
                     message_output.send(message.sender_uid(), "WeaponUpgradeRsp", response);
                 }
             }
+            "WeaponPromoteReq" => {
+                let Some(request) = message.decode::<WeaponPromoteReq>() else {
+                    continue;
+                };
+                let Some(player) = players.get_mut(message.sender_uid()) else {
+                    continue;
+                };
+                let response =
+                    promote_weapon(player, &request, &message_output).unwrap_or_else(|code| {
+                        WeaponPromoteRsp {
+                            target_weapon_guid: request.target_weapon_guid,
+                            retcode: code.into(),
+                            ..Default::default()
+                        }
+                    });
+                if response.retcode == 0 {
+                    equip_updated(player, request.target_weapon_guid, &mut equip_change_events);
+                }
+                message_output.send(message.sender_uid(), "WeaponPromoteRsp", response);
+            }
+            "WeaponAwakenReq" => {
+                let Some(request) = message.decode::<WeaponAwakenReq>() else {
+                    continue;
+                };
+                let Some(player) = players.get_mut(message.sender_uid()) else {
+                    continue;
+                };
+                let response =
+                    awaken_weapon(player, &request, &message_output).unwrap_or_else(|code| {
+                        WeaponAwakenRsp {
+                            target_weapon_guid: request.target_weapon_guid,
+                            retcode: code.into(),
+                            ..Default::default()
+                        }
+                    });
+                if response.retcode == 0 {
+                    equip_updated(player, request.target_weapon_guid, &mut equip_change_events);
+                }
+                message_output.send(message.sender_uid(), "WeaponAwakenRsp", response);
+            }
             &_ => {}
         }
     }
@@ -446,7 +487,10 @@ fn upgrade_weapon(
         return Err(Retcode::RetItemInvalidTarget);
     };
     let old_level = weapon.level;
-    let max = crate::item::get_max_level_by_promote_level(weapon.promote_level);
+    let max = snezhnaya_gi_data::excel::weapon_promote_excel_config_collection::get()
+        .get(&((row.weapon_promote_id << 8) | weapon.promote_level))
+        .ok_or(Retcode::RetNotFoundConfig)?
+        .unlock_max_level;
     if weapon.level == 0 || weapon.level >= max {
         return Err(Retcode::RetEquipLevelHigher);
     }
@@ -648,4 +692,182 @@ fn advance_relic(
         u32::try_from(total).map_err(|_| Retcode::RetItemExceedLimit)?
     };
     Ok(())
+}
+
+fn promote_weapon(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    request: &WeaponPromoteReq,
+    output: &MessageOutput,
+) -> crate::transaction::InventoryResult<WeaponPromoteRsp> {
+    use crate::transaction::*;
+    use snezhnaya_gi_data::excel::weapon_promote_excel_config_collection;
+    let mut target = player
+        .item_bin
+        .as_ref()
+        .and_then(|items| items.get_item(&request.target_weapon_guid))
+        .cloned()
+        .ok_or(Retcode::RetItemNotExist)?;
+    let config = weapon_excel_config_collection::get()
+        .get(&target.item_id)
+        .ok_or(Retcode::RetItemInvalidTarget)?;
+    let Some(item_bin::Detail::Equip(equip)) = target.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let Some(equip_bin::Detail::Weapon(weapon)) = equip.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let old = weapon.promote_level;
+    let current = weapon_promote_excel_config_collection::get()
+        .get(&((config.weapon_promote_id << 8) | old))
+        .ok_or(Retcode::RetNotFoundConfig)?;
+    let next_level = old
+        .checked_add(1)
+        .ok_or(Retcode::RetWeaponPromoteLevelExceedLimit)?;
+    let next = weapon_promote_excel_config_collection::get()
+        .get(&((config.weapon_promote_id << 8) | next_level))
+        .ok_or(Retcode::RetWeaponPromoteLevelExceedLimit)?;
+    if weapon.level < current.unlock_max_level {
+        return Err(Retcode::RetWeaponLevelInvalid);
+    }
+    if player.basic_bin.as_ref().map_or(0, |bin| bin.level) < next.required_player_level {
+        return Err(Retcode::RetPlayerLevelLessThan);
+    }
+    let mut costs = Amounts::new();
+    add_amount(&mut costs, 202, next.coin_cost)?;
+    for item in &next.cost_items {
+        add_amount(&mut costs, item.id, item.count)?;
+    }
+    weapon.promote_level = next_level;
+    let mut change = transact(player, &costs, &Amounts::new(), &[])?;
+    commit_target(player, target, EquipType::Weapon, &mut change);
+    notify_transaction(output, player, &change);
+    Ok(WeaponPromoteRsp {
+        target_weapon_guid: request.target_weapon_guid,
+        old_promote_level: old,
+        cur_promote_level: next_level,
+        retcode: 0,
+    })
+}
+
+fn awaken_weapon(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    request: &WeaponAwakenReq,
+    output: &MessageOutput,
+) -> crate::transaction::InventoryResult<WeaponAwakenRsp> {
+    use crate::transaction::*;
+    let items = player.item_bin.as_ref().ok_or(Retcode::RetItemNotExist)?;
+    let mut target = items
+        .get_item(&request.target_weapon_guid)
+        .cloned()
+        .ok_or(Retcode::RetItemNotExist)?;
+    let config = weapon_excel_config_collection::get()
+        .get(&target.item_id)
+        .filter(|config| config.rank_level >= 3 && config.skill_affix.iter().any(|id| *id != 0))
+        .ok_or(Retcode::RetItemInvalidTarget)?;
+    let Some(item_bin::Detail::Equip(equip)) = target.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let Some(equip_bin::Detail::Weapon(weapon)) = equip.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let old_level = weapon.affix_map.values().copied().max().unwrap_or(0);
+    if old_level >= 4 || request.item_guid_list.len() > 4 || request.awaken_material_count > 4 {
+        return Err(Retcode::RetItemInvalidUseCount);
+    }
+    let mut costs = Amounts::new();
+    let mut gains = Vec::new();
+    let mut remove = Vec::new();
+    let mut seen = HashSet::new();
+    if request.item_guid_list.is_empty() {
+        if config.awaken_material == 0 || request.awaken_material_count == 0 {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        add_amount(
+            &mut costs,
+            config.awaken_material,
+            request.awaken_material_count,
+        )?;
+        gains.resize(request.awaken_material_count as usize, 1);
+    } else {
+        let count = request.item_guid_list.len() as u32;
+        if request.awaken_material_count != 0
+            && count != 1
+            && request.awaken_material_count != count
+        {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        for guid in &request.item_guid_list {
+            if *guid == target.guid || !seen.insert(*guid) {
+                return Err(Retcode::RetItemInvalidTarget);
+            }
+            let food = items.get_item(guid).ok_or(Retcode::RetItemNotExist)?;
+            if config.awaken_material != 0 {
+                if food.item_id != config.awaken_material
+                    || !matches!(food.detail, Some(item_bin::Detail::Material(_)))
+                {
+                    return Err(Retcode::RetItemInvalidTarget);
+                }
+                let amount = if count == 1 {
+                    request.awaken_material_count.max(1)
+                } else {
+                    1
+                };
+                add_amount(&mut costs, config.awaken_material, amount)?;
+                gains.extend(std::iter::repeat_n(1, amount as usize));
+            } else {
+                if food.item_id != target.item_id
+                    || (request.awaken_material_count != 0
+                        && request.awaken_material_count != count)
+                {
+                    return Err(Retcode::RetItemInvalidTarget);
+                }
+                let Some(item_bin::Detail::Equip(equip)) = &food.detail else {
+                    return Err(Retcode::RetItemInvalidTarget);
+                };
+                let Some(equip_bin::Detail::Weapon(food_weapon)) = &equip.detail else {
+                    return Err(Retcode::RetItemInvalidTarget);
+                };
+                let rank = food_weapon.affix_map.values().copied().max().unwrap_or(0);
+                if rank > 4 {
+                    return Err(Retcode::RetItemInvalidTarget);
+                }
+                gains.push(rank + 1);
+                remove.push(*guid);
+            }
+        }
+    }
+    if gains.is_empty() || gains.len() > 4 {
+        return Err(Retcode::RetItemInvalidUseCount);
+    }
+    let mut next = old_level;
+    for gain in gains {
+        if next >= 4 {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        let cost = config
+            .awaken_costs
+            .get(next as usize)
+            .copied()
+            .ok_or(Retcode::RetNotFoundConfig)?;
+        add_amount(&mut costs, 202, cost)?;
+        // 已精炼的素材继承等级，摩拉按每件素材收取一次。
+        next = (next + gain).min(4);
+    }
+    let old_affix_level_map = weapon.affix_map.clone();
+    for id in config.skill_affix.iter().filter(|id| **id != 0) {
+        weapon.affix_map.insert(*id, next);
+    }
+    let response = WeaponAwakenRsp {
+        target_weapon_guid: target.guid,
+        avatar_guid: target.owner_guid,
+        old_affix_level_map,
+        cur_affix_level_map: weapon.affix_map.clone(),
+        target_weapon_awaken_level: next,
+        retcode: 0,
+    };
+    // 被锁定或已穿戴的素材也由背包事务统一拒绝。
+    let mut change = transact(player, &costs, &Amounts::new(), &remove)?;
+    commit_target(player, target, EquipType::Weapon, &mut change);
+    notify_transaction(output, player, &change);
+    Ok(response)
 }

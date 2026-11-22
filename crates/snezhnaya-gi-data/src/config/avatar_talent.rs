@@ -65,3 +65,50 @@ pub fn process_inherent_proud_skills(
     }
     open_configs
 }
+
+pub fn proud_skill_extra_levels(skill_depot_id: u32, talent_ids: &[u32]) -> HashMap<u32, u32> {
+    use crate::excel::{
+        avatar_skill_depot_excel_config_collection as depots,
+        avatar_skill_excel_config_collection as skills,
+        avatar_talent_excel_config_collection as talents,
+    };
+    let mut levels = HashMap::<u32, u32>::new();
+    let Some(depot) = depots::get().get(&skill_depot_id) else {
+        return levels;
+    };
+    for id in talent_ids {
+        let Some(actions) = talents::get()
+            .get(id)
+            .and_then(|talent| get_avatar_talent_config(&talent.open_config))
+        else {
+            continue;
+        };
+        for action in actions {
+            let TalentAction::AddTalentExtraLevel {
+                extra_level,
+                talent_type,
+                talent_index,
+            } = action
+            else {
+                continue;
+            };
+            if talent_type.as_str() != "AvatarSkill" {
+                continue;
+            }
+            let skill_id = match talent_index {
+                1 | 2 => depot.skills.get((*talent_index - 1) as usize).copied(),
+                9 => Some(depot.energy_skill),
+                _ => None,
+            };
+            let Some(skill) = skill_id
+                .and_then(|id| skills::get().get(&id))
+                .filter(|skill| skill.proud_skill_group_id != 0)
+            else {
+                continue;
+            };
+            let level = levels.entry(skill.proud_skill_group_id).or_default();
+            *level = level.saturating_add(*extra_level);
+        }
+    }
+    levels
+}

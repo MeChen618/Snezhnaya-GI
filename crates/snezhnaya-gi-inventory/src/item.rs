@@ -483,24 +483,6 @@ pub fn get_min_promote_level(level: u32) -> u32 {
     }
 }
 
-pub fn get_max_level_by_promote_level(promote_level: u32) -> u32 {
-    if promote_level == 0 {
-        return 20;
-    } else if promote_level == 1 {
-        return 40;
-    } else if promote_level == 2 {
-        return 50;
-    } else if promote_level == 3 {
-        return 60;
-    } else if promote_level == 4 {
-        return 70;
-    } else if promote_level == 5 {
-        return 80;
-    } else {
-        return 100;
-    }
-}
-
 pub fn random_offset_vec3((x, y, z): (f32, f32, f32), rng: &mut SmallRng) -> (f32, f32, f32) {
     let dx = rng.gen_range(-0.5..0.5);
     let dy = rng.gen_range(-0.5..0.5);

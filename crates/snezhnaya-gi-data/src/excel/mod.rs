@@ -7,6 +7,7 @@ mod avatar_costume_excel_config;
 mod avatar_curve_excel_config;
 mod avatar_excel_config;
 mod avatar_flycloak_excel_config;
+mod avatar_level_excel_config;
 mod avatar_promote_excel_config;
 mod avatar_skill_depot_excel_config;
 mod avatar_skill_excel_config;
@@ -37,12 +38,14 @@ mod scene_tag_config;
 mod weapon_curve_excel_config;
 mod weapon_excel_config;
 mod weapon_level_excel_config;
+mod weapon_promote_excel_config;
 
 pub use anecdote_excel_config::*;
 pub use avatar_costume_excel_config::*;
 pub use avatar_curve_excel_config::*;
 pub use avatar_excel_config::*;
 pub use avatar_flycloak_excel_config::*;
+pub use avatar_level_excel_config::*;
 pub use avatar_promote_excel_config::*;
 pub use avatar_skill_depot_excel_config::*;
 pub use avatar_skill_excel_config::*;
@@ -71,6 +74,7 @@ pub use scene_tag_config::*;
 pub use weapon_curve_excel_config::*;
 pub use weapon_excel_config::*;
 pub use weapon_level_excel_config::*;
+pub use weapon_promote_excel_config::*;
 
 use paste::paste;
 
@@ -113,6 +117,7 @@ excel_loader! {
     AvatarCostumeExcelConfig;
     AvatarCurveExcelConfig;
     AvatarExcelConfig;
+    AvatarLevelExcelConfig;
     AvatarFlycloakExcelConfig;
     AvatarPromoteExcelConfig;
     AvatarSkillDepotExcelConfig;
@@ -142,5 +147,6 @@ excel_loader! {
     WeaponCurveExcelConfig;
     WeaponExcelConfig;
     WeaponLevelExcelConfig;
+    WeaponPromoteExcelConfig;
     AnecdoteExcelConfig;
 }

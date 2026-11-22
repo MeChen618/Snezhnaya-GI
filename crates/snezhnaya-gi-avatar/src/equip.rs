@@ -1,11 +1,11 @@
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::excel::common::EquipType;
-use snezhnaya_gi_data::excel::{avatar_excel_config_collection, weapon_excel_config_collection};
-use snezhnaya_gi_entity::avatar::{spawn_avatar_entity, AvatarEquipmentWeapon};
+use snezhnaya_gi_data::excel::weapon_excel_config_collection;
+use snezhnaya_gi_entity::avatar::AvatarEquipmentWeapon;
 use snezhnaya_gi_entity::gadget::GadgetID;
 use snezhnaya_gi_entity::{
     common::{
-        create_fight_props_with_equip, EntityCounter, Guid, Level, OwnerPlayerUID,
+        refresh_avatar_fight_props, EntityCounter, FightProperties, Guid, Level, OwnerPlayerUID,
         ToBeRemovedMarker,
     },
     util::to_protocol_entity_id,
@@ -19,20 +19,23 @@ use snezhnaya_gi_proto::normal::{
     AbilitySyncStateInfo, AvatarEquipChangeNotify, EntityRendererChangedInfo, ProtEntityType,
     SceneReliquaryInfo, SceneWeaponInfo,
 };
-use snezhnaya_gi_proto::server_only::{equip_bin, item_bin, VectorBin};
+use snezhnaya_gi_proto::server_only::{equip_bin, item_bin};
 
 pub fn apply_equip_change_to_avatar_entity(
     mut events: MessageReader<AvatarEquipChangeEvent>,
     mut commands: Commands,
-    mut avatars: Query<(Entity, &Guid, &OwnerPlayerUID, &AvatarEquipmentWeapon)>,
+    avatars: Query<(
+        Entity,
+        &Guid,
+        &OwnerPlayerUID,
+        &AvatarEquipmentWeapon,
+        &FightProperties,
+    )>,
     mut entity_counter: ResMut<EntityCounter>,
     players: Res<Players>,
     message_output: Res<MessageOutput>,
     world_version_config: Res<WorldVersionConfig>,
 ) {
-    let avatar_excel_config_collection_clone =
-        std::sync::Arc::clone(avatar_excel_config_collection::get());
-
     let weapon_excel_config_collection_clone =
         std::sync::Arc::clone(weapon_excel_config_collection::get());
 
@@ -55,40 +58,30 @@ pub fn apply_equip_change_to_avatar_entity(
             continue;
         };
 
-        let found = avatars.iter_mut().find(|(_, guid, owner_uid, ..)| {
+        let found = avatars.iter().find(|(_, guid, owner_uid, ..)| {
             owner_uid.0 == avatar_equip_change.player_uid
                 && guid.0 == avatar_equip_change.avatar_guid
         });
-
-        let (avatar_entity, weapon_entity) = if let Some((entity, _, _, equipment_weapon)) = found {
-            (entity, equipment_weapon.0)
-        } else {
-            let Some((entity, weapon_entity)) = spawn_avatar_entity(
-                world_version_config.protocol_version.clone(),
-                &mut commands,
-                &mut entity_counter,
-                avatar_bin,
-                VectorBin::default(),
-                VectorBin::default(),
-                avatar_equip_change.player_uid,
-                1,
-                0,
-            ) else {
-                continue;
-            };
-            (entity, weapon_entity)
-        };
-
-        let Some(avatar_config) = avatar_excel_config_collection_clone.get(&avatar_bin.avatar_id)
-        else {
-            tracing::debug!("avatar config {} doesn't exist", avatar_bin.avatar_id);
+        let Some(fight_props) = refresh_avatar_fight_props(avatar_bin, found.map(|x| x.4)) else {
             continue;
         };
-
-        let mut fight_props = create_fight_props_with_equip(avatar_bin, avatar_config);
-        fight_props.flush_property();
-
-        commands.entity(avatar_entity).insert(fight_props);
+        if let Some((entity, ..)) = found {
+            commands.entity(entity).insert(fight_props);
+        } else {
+            // 未上场角色只更新面板，不额外创建场景实体。
+            message_output.send(
+                avatar_equip_change.player_uid,
+                "AvatarFightPropUpdateNotify",
+                snezhnaya_gi_proto::normal::AvatarFightPropUpdateNotify {
+                    avatar_guid: avatar_bin.guid,
+                    fight_prop_map: fight_props
+                        .0
+                        .into_iter()
+                        .map(|(key, value)| (key as u32, value))
+                        .collect(),
+                },
+            );
+        }
 
         let Some(equip_item_bin) = avatar_bin
             .equip_map
@@ -153,29 +146,30 @@ pub fn apply_equip_change_to_avatar_entity(
                     continue;
                 };
 
-                commands.entity(weapon_entity).insert(ToBeRemovedMarker);
-
-                let protocol_entity_id = to_protocol_entity_id(
-                    world_version_config.protocol_version.as_str(),
-                    ProtEntityType::ProtEntityWeapon,
-                    entity_counter.inc(),
-                );
-
-                let entity_id = protocol_entity_id.0;
-
-                let weapon_entity = commands
-                    .spawn(WeaponBundle {
-                        weapon_id: WeaponID(weapon_id),
-                        entity_id: protocol_entity_id,
-                        level: Level(weapon.level),
-                        guid: Guid(equip_item_bin.guid),
-                        gadget_id: GadgetID(weapon_config.gadget_id),
-                        affix_map: AffixMap(weapon.affix_map.clone()),
-                        promote_level: WeaponPromoteLevel(weapon.promote_level),
-                    })
-                    .id();
-
-                commands.entity(avatar_entity).insert(AvatarEquipmentWeapon(weapon_entity));
+                let mut entity_id = 0;
+                if let Some((avatar_entity, _, _, old_weapon, _)) = found {
+                    commands.entity(old_weapon.0).insert(ToBeRemovedMarker);
+                    let protocol_entity_id = to_protocol_entity_id(
+                        world_version_config.protocol_version.as_str(),
+                        ProtEntityType::ProtEntityWeapon,
+                        entity_counter.inc(),
+                    );
+                    entity_id = protocol_entity_id.0;
+                    let weapon_entity = commands
+                        .spawn(WeaponBundle {
+                            weapon_id: WeaponID(weapon_id),
+                            entity_id: protocol_entity_id,
+                            level: Level(weapon.level),
+                            guid: Guid(equip_item_bin.guid),
+                            gadget_id: GadgetID(weapon_config.gadget_id),
+                            affix_map: AffixMap(weapon.affix_map.clone()),
+                            promote_level: WeaponPromoteLevel(weapon.promote_level),
+                        })
+                        .id();
+                    commands
+                        .entity(avatar_entity)
+                        .insert(AvatarEquipmentWeapon(weapon_entity));
+                }
 
                 message_output.send_to_all(
                     "AvatarEquipChangeNotify",

@@ -16,3 +16,4 @@ snezhnaya-gi-event.workspace = true
 snezhnaya-gi-persistence.workspace = true
 snezhnaya-gi-message.workspace = true
 snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-inventory.workspace = true

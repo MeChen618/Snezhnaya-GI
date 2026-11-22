@@ -100,83 +100,83 @@ pub fn set_pause(
 pub fn client_set_game_time(
     mut events: MessageReader<ClientMessageEvent>,
     players: Res<Players>,
+    owner: Res<WorldOwnerUID>,
     mut time: ResMut<SceneTime>,
     message_output: Res<MessageOutput>,
 ) {
     for message in events.read() {
+        let uid = message.sender_uid();
+        let retcode = if uid != owner.0 {
+            i32::from(Retcode::RetMpNotInMyWorld)
+        } else if players
+            .get(uid)
+            .and_then(|p| p.basic_bin.as_ref())
+            .is_none_or(|basic| basic.is_game_time_locked)
+        {
+            i32::from(Retcode::RetPlayerTimeLocked)
+        } else {
+            0
+        };
         match message.message_name() {
             "ClientSetGameTimeReq" => {
-                if let Some(request) = message.decode::<ClientSetGameTimeReq>() {
-                    let uid = message.sender_uid();
-                    let Some(player_info) = players.get(uid) else {
-                        continue;
-                    };
-                    let Some(ref player_basic_bin) = player_info.basic_bin else {
-                        continue;
-                    };
-                    let mut rsp = ClientSetGameTimeRsp::default();
-
-                    if player_basic_bin.is_game_time_locked {
-                        tracing::debug!("game time is locked, uid: {uid}");
-                        rsp.retcode = Retcode::RetPlayerTimeLocked.into();
-                    } else {
-                        tracing::debug!("set game time to {}, uid: {uid}", request.game_time);
-
-                        rsp.game_time = request.game_time;
-                        rsp.client_game_time = request.client_game_time;
-                        time.game_time = request.game_time;
-
+                let Some(request) = message.decode::<ClientSetGameTimeReq>() else {
+                    continue;
+                };
+                if retcode == 0 {
+                    time.game_time = request.game_time;
+                    message_output.send_to_all(
+                        "PlayerGameTimeNotify",
+                        PlayerGameTimeNotify {
+                            uid,
+                            is_home: false,
+                            game_time: time.game_time,
+                        },
+                    );
+                }
+                message_output.send(
+                    uid,
+                    "ClientSetGameTimeRsp",
+                    ClientSetGameTimeRsp {
+                        retcode,
+                        game_time: time.game_time,
+                        client_game_time: request.client_game_time,
+                        ..Default::default()
+                    },
+                );
+            }
+            "ChangeGameTimeReq" => {
+                let Some(request) = message.decode::<ChangeGameTimeReq>() else {
+                    continue;
+                };
+                let mut rsp = ChangeGameTimeRsp {
+                    retcode,
+                    cur_game_time: time.game_time,
+                    extra_days: request.extra_days,
+                };
+                if retcode == 0 {
+                    // 游戏时间以分钟累计，跨天也不回退。
+                    let delta = (request.game_time % 1440 + 1440 - time.game_time % 1440) % 1440;
+                    let next = u64::from(time.game_time)
+                        + u64::from(request.extra_days) * 1440
+                        + u64::from(delta);
+                    if let Ok(next) = u32::try_from(next) {
+                        time.game_time = next;
+                        rsp.cur_game_time = next;
                         message_output.send_to_all(
                             "PlayerGameTimeNotify",
                             PlayerGameTimeNotify {
                                 uid,
                                 is_home: false,
-                                game_time: time.game_time,
+                                game_time: next,
                             },
                         );
-                    }
-
-                    message_output.send(uid, "ClientSetGameTimeRsp", rsp);
-                }
-            }
-            "ChangeGameTimeReq" => {
-                if let Some(request) = message.decode::<ChangeGameTimeReq>() {
-                    let uid = message.sender_uid();
-                    let Some(player_info) = players.get(uid) else {
-                        continue;
-                    };
-                    let Some(ref player_basic_bin) = player_info.basic_bin else {
-                        continue;
-                    };
-                    let mut rsp = ChangeGameTimeRsp::default();
-
-                    if player_basic_bin.is_game_time_locked {
-                        tracing::debug!("game time is locked, uid: {uid}");
-                        rsp.retcode = Retcode::RetPlayerTimeLocked.into();
                     } else {
-                        tracing::debug!("set game time to {}, uid: {uid}", request.game_time);
-
-                        let mut diff = request.game_time - time.game_time;
-                        if request.game_time < time.game_time {
-                            diff = 1440 + request.game_time - time.game_time;
-                        }
-
-                        time.game_time += request.extra_days * 1440 * 1000 + diff * 1000;
-
-                        message_output.send_to_all(
-                            "ChangeGameTimeRsp",
-                            ChangeGameTimeRsp {
-                                retcode: 0,
-                                cur_game_time: time.game_time,
-                                extra_days: request.extra_days,
-                            },
-                        );
+                        rsp.retcode = Retcode::RetFail.into();
                     }
-
-                    message_output.send(uid, "ClientSetGameTimeRsp", rsp);
                 }
+                message_output.send(uid, "ChangeGameTimeRsp", rsp);
             }
-            &_ => {}
+            _ => (),
         }
     }
 }

@@ -56868,9 +56868,9 @@ message GCGTavernNpcInfo {
 
 // CmdId: 26301
 message WeaponPromoteRsp {
-  uint32 IKPCFNGGBFN = 2;
+  uint32 old_promote_level = 2;
   int32 retcode = 3;
-  uint32 JINHCIFMKCE = 5;
+  uint32 cur_promote_level = 5;
   uint64 target_weapon_guid = 8;
 }
 

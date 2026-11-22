@@ -230,6 +230,12 @@ fn create_avatar(
             ..Default::default()
         },
     );
+    if let Some(bin) = avatar_bin.avatar_map.get_mut(&avatar_guid) {
+        let props = snezhnaya_gi_entity::common::create_fight_props_with_equip(bin, avatar_config);
+        bin.cur_hp =
+            props.get_property(snezhnaya_gi_data::prop_type::FightPropType::FIGHT_PROP_MAX_HP);
+        bin.life_state = 1;
+    }
     Some(avatar_guid)
 }
 
@@ -311,6 +317,10 @@ pub fn client_avatar_info(
             ..Default::default()
         }),
         skill_level_map: skill_depot.skill_level_map.clone(),
+        proud_skill_extra_level_map: snezhnaya_gi_data::config::proud_skill_extra_levels(
+            avatar_bin.skill_depot_id,
+            &skill_depot.talent_id_list,
+        ),
         skill_map: avatar_bin
             .skill_map
             .iter()
@@ -327,6 +337,10 @@ pub fn client_avatar_info(
         inherent_proud_skill_list: skill_depot.inherent_proud_skill_list.clone(),
         prop_map: int_prop_map! {
             PROP_LEVEL: avatar_bin.level;
+            PROP_EXP: match avatar_bin.detail.as_ref() {
+                Some(avatar_bin::Detail::FormalAvatar(formal)) => formal.exp,
+                _ => 0,
+            };
             PROP_BREAK_LEVEL: avatar_bin.promote_level;
         },
         fight_prop_map: create_fight_props_with_equip(avatar_bin, avatar_config)

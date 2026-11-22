@@ -7,6 +7,11 @@ pub struct AvatarPromoteExcelConfig {
     pub avatar_promote_id: u32,
     #[serde(default)]
     pub promote_level: u32,
+    #[serde(default)]
+    pub required_player_level: u32,
+    #[serde(default)]
+    pub scoin_cost: u32,
+    pub unlock_max_level: u32,
     pub cost_items: Vec<IdCountConfig>,
     pub add_props: Vec<AddProp>,
 }
@@ -28,11 +33,7 @@ impl AvatarPromoteExcelConfigKeyed<u32> for AvatarPromoteExcelConfig {
         ))
         .unwrap();
         let list: Vec<AvatarPromoteExcelConfig> = serde_json::from_slice(&*json).unwrap();
-        let data = list
-            .iter()
-            .filter(|item| item.promote_level != 0)
-            .map(|item| (item.key(), item.clone()))
-            .collect();
+        let data = list.iter().map(|item| (item.key(), item.clone())).collect();
         data
     }
 }

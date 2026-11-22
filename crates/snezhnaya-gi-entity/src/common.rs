@@ -436,47 +436,44 @@ pub fn create_fight_props(
 ) -> FightProperties {
     let mut props = fight_props! {
         FIGHT_PROP_BASE_HP: config.hp_base,
-        FIGHT_PROP_HP: config.hp_base,
+        FIGHT_PROP_HP: 0.0,
         FIGHT_PROP_HP_PERCENT: 0.0,
         FIGHT_PROP_CUR_HP: config.hp_base,
         FIGHT_PROP_MAX_HP: config.hp_base,
 
         FIGHT_PROP_BASE_ATTACK: config.attack_base,
-        FIGHT_PROP_ATTACK: config.attack_base,
+        FIGHT_PROP_ATTACK: 0.0,
         FIGHT_PROP_ATTACK_PERCENT: 0.0,
         FIGHT_PROP_CUR_ATTACK: config.attack_base,
 
         FIGHT_PROP_BASE_DEFENSE: config.defense_base,
-        FIGHT_PROP_DEFENSE: config.defense_base,
+        FIGHT_PROP_DEFENSE: 0.0,
         FIGHT_PROP_DEFENSE_PERCENT: 0.0,
         FIGHT_PROP_CUR_DEFENSE: config.defense_base,
 
         FIGHT_PROP_ELEMENT_MASTERY: config.element_mastery,
         FIGHT_PROP_CRITICAL: config.critical,
         FIGHT_PROP_CRITICAL_HURT: config.critical_hurt,
-        FIGHT_PROP_CUR_WIND_ENERGY: 100.0,
-        FIGHT_PROP_CUR_GRASS_ENERGY: 100.0,
-        FIGHT_PROP_CUR_ICE_ENERGY: 100.0,
-        FIGHT_PROP_CUR_FIRE_ENERGY: 100.0,
-        FIGHT_PROP_CUR_ELEC_ENERGY: 100.0,
-        FIGHT_PROP_CUR_WATER_ENERGY: 100.0,
-        FIGHT_PROP_CUR_ROCK_ENERGY: 100.0,
-        FIGHT_PROP_CUR_SPECIAL_ENERGY: 100.0,
-        FIGHT_PROP_START_SPECIAL_ENERGY: 100.0,
-        FIGHT_PROP_MAX_WIND_ENERGY: 100.0,
-        FIGHT_PROP_MAX_GRASS_ENERGY: 100.0,
-        FIGHT_PROP_MAX_ICE_ENERGY: 100.0,
-        FIGHT_PROP_MAX_FIRE_ENERGY: 100.0,
-        FIGHT_PROP_MAX_ELEC_ENERGY: 100.0,
-        FIGHT_PROP_MAX_WATER_ENERGY: 100.0,
-        FIGHT_PROP_MAX_ROCK_ENERGY: 100.0,
-        FIGHT_PROP_MAX_SPECIAL_ENERGY: 100.0,
-
-        FIGHT_PROP_CHARGE_EFFICIENCY: 0.0,
+        FIGHT_PROP_CUR_FIRE_ENERGY: 0.0,
+        FIGHT_PROP_CUR_ELEC_ENERGY: 0.0,
+        FIGHT_PROP_CUR_WATER_ENERGY: 0.0,
+        FIGHT_PROP_CUR_GRASS_ENERGY: 0.0,
+        FIGHT_PROP_CUR_WIND_ENERGY: 0.0,
+        FIGHT_PROP_CUR_ICE_ENERGY: 0.0,
+        FIGHT_PROP_CUR_ROCK_ENERGY: 0.0,
+        FIGHT_PROP_CUR_SPECIAL_ENERGY: 0.0,
+        FIGHT_PROP_MAX_FIRE_ENERGY: 0.0,
+        FIGHT_PROP_MAX_ELEC_ENERGY: 0.0,
+        FIGHT_PROP_MAX_WATER_ENERGY: 0.0,
+        FIGHT_PROP_MAX_GRASS_ENERGY: 0.0,
+        FIGHT_PROP_MAX_WIND_ENERGY: 0.0,
+        FIGHT_PROP_MAX_ICE_ENERGY: 0.0,
+        FIGHT_PROP_MAX_ROCK_ENERGY: 0.0,
+        FIGHT_PROP_MAX_SPECIAL_ENERGY: 0.0,
+        FIGHT_PROP_START_SPECIAL_ENERGY: 0.0,
+        FIGHT_PROP_CHARGE_EFFICIENCY: 1.0,
         FIGHT_PROP_HEAL_ADD: 0.0,
         FIGHT_PROP_HEALED_ADD: 0.0,
-        FIGHT_PROP_CRITICAL: 0.0,
-        FIGHT_PROP_CRITICAL_HURT: 0.0,
 
         FIGHT_PROP_ADD_HURT: 0.0,
         FIGHT_PROP_PHYSICAL_ADD_HURT: 0.0,
@@ -534,8 +531,123 @@ pub fn create_fight_props_with_equip(
     let mut props = create_fight_props(avatar_config, avatar_bin.level, avatar_bin.promote_level);
     add_fight_props_from_weapon(&mut props, avatar_bin);
     add_fight_props_from_reliquary(&mut props, avatar_bin);
+    if let Some(depot) = avatar_bin.depot_map.get(&avatar_bin.skill_depot_id) {
+        for id in &depot.talent_id_list {
+            if let Some(talent) =
+                snezhnaya_gi_data::excel::avatar_talent_excel_config_collection::get().get(id)
+            {
+                for prop in &talent.add_props {
+                    props.change_property(prop.prop_type, prop.value);
+                }
+            }
+        }
+        for id in &depot.inherent_proud_skill_list {
+            if let Some(skill) =
+                snezhnaya_gi_data::excel::proud_skill_excel_config_collection::get().get(id)
+            {
+                for prop in &skill.add_props {
+                    props.change_property(prop.prop_type, prop.value);
+                }
+            }
+        }
+    }
     props.apply_base_values();
+    use FightPropType::*;
+    props.set_property(
+        FIGHT_PROP_CUR_HP,
+        avatar_bin
+            .cur_hp
+            .clamp(0.0, props.get_property(FIGHT_PROP_MAX_HP).max(0.0)),
+    );
+    if let Some((current, maximum)) = avatar_energy_props(avatar_bin) {
+        let depot = &snezhnaya_gi_data::excel::avatar_skill_depot_excel_config_collection::get()
+            [&avatar_bin.skill_depot_id];
+        if let Some(skill) = snezhnaya_gi_data::excel::avatar_skill_excel_config_collection::get()
+            .get(&depot.energy_skill)
+        {
+            props.set_property(maximum, skill.cost_elem_val as f32);
+            props.set_property(
+                current,
+                avatar_bin
+                    .cur_elem_energy
+                    .clamp(0.0, skill.cost_elem_val as f32),
+            );
+            props.set_property(
+                FIGHT_PROP_MAX_SPECIAL_ENERGY,
+                skill.special_energy_max.max(0.0),
+            );
+            props.set_property(
+                FIGHT_PROP_START_SPECIAL_ENERGY,
+                skill.special_energy_min.max(0.0),
+            );
+        }
+    }
+    props.clear_property();
     props
+}
+
+pub fn avatar_energy_props(avatar: &AvatarBin) -> Option<(FightPropType, FightPropType)> {
+    use snezhnaya_gi_data::excel::{
+        avatar_skill_depot_excel_config_collection as depots,
+        avatar_skill_excel_config_collection as skills, common::ElementType,
+    };
+    use FightPropType::*;
+    let skill = skills::get().get(&depots::get().get(&avatar.skill_depot_id)?.energy_skill)?;
+    Some(match skill.cost_elem_type {
+        ElementType::Fire => (FIGHT_PROP_CUR_FIRE_ENERGY, FIGHT_PROP_MAX_FIRE_ENERGY),
+        ElementType::Electric => (FIGHT_PROP_CUR_ELEC_ENERGY, FIGHT_PROP_MAX_ELEC_ENERGY),
+        ElementType::Water => (FIGHT_PROP_CUR_WATER_ENERGY, FIGHT_PROP_MAX_WATER_ENERGY),
+        ElementType::Grass => (FIGHT_PROP_CUR_GRASS_ENERGY, FIGHT_PROP_MAX_GRASS_ENERGY),
+        ElementType::Wind => (FIGHT_PROP_CUR_WIND_ENERGY, FIGHT_PROP_MAX_WIND_ENERGY),
+        ElementType::Ice => (FIGHT_PROP_CUR_ICE_ENERGY, FIGHT_PROP_MAX_ICE_ENERGY),
+        ElementType::Rock => (FIGHT_PROP_CUR_ROCK_ENERGY, FIGHT_PROP_MAX_ROCK_ENERGY),
+        _ => return None,
+    })
+}
+
+// 重算属性时保留当前状态，不借换装回血或补满能量。
+pub fn refresh_avatar_fight_props(
+    avatar: &AvatarBin,
+    previous: Option<&FightProperties>,
+) -> Option<FightProperties> {
+    use FightPropType::*;
+    let config =
+        snezhnaya_gi_data::excel::avatar_excel_config_collection::get().get(&avatar.avatar_id)?;
+    let mut next = create_fight_props_with_equip(avatar, config);
+    if let Some(previous) = previous {
+        let max = previous.get_property(FIGHT_PROP_MAX_HP);
+        let ratio = if max > 0.0 {
+            previous.get_property(FIGHT_PROP_CUR_HP) / max
+        } else {
+            0.0
+        };
+        next.set_property(
+            FIGHT_PROP_CUR_HP,
+            ratio.clamp(0.0, 1.0) * next.get_property(FIGHT_PROP_MAX_HP),
+        );
+        for (current, maximum) in [
+            (FIGHT_PROP_CUR_FIRE_ENERGY, FIGHT_PROP_MAX_FIRE_ENERGY),
+            (FIGHT_PROP_CUR_ELEC_ENERGY, FIGHT_PROP_MAX_ELEC_ENERGY),
+            (FIGHT_PROP_CUR_WATER_ENERGY, FIGHT_PROP_MAX_WATER_ENERGY),
+            (FIGHT_PROP_CUR_GRASS_ENERGY, FIGHT_PROP_MAX_GRASS_ENERGY),
+            (FIGHT_PROP_CUR_WIND_ENERGY, FIGHT_PROP_MAX_WIND_ENERGY),
+            (FIGHT_PROP_CUR_ICE_ENERGY, FIGHT_PROP_MAX_ICE_ENERGY),
+            (FIGHT_PROP_CUR_ROCK_ENERGY, FIGHT_PROP_MAX_ROCK_ENERGY),
+            (FIGHT_PROP_CUR_SPECIAL_ENERGY, FIGHT_PROP_MAX_SPECIAL_ENERGY),
+        ] {
+            next.set_property(
+                current,
+                previous
+                    .get_property(current)
+                    .clamp(0.0, next.get_property(maximum).max(0.0)),
+            );
+        }
+        for prop in [FIGHT_PROP_CUR_HP_DEBTS, FIGHT_PROP_CUR_HP_PAID_DEBTS] {
+            next.set_property(prop, previous.get_property(prop));
+        }
+    }
+    next.flush_property();
+    Some(next)
 }
 
 pub fn add_fight_props_from_weapon(props: &mut FightProperties, avatar_bin: &AvatarBin) {
@@ -578,6 +690,14 @@ pub fn add_fight_props_from_weapon(props: &mut FightProperties, avatar_bin: &Ava
                     is_add_weapon = true;
                     let val = curve_info.apply(weapon_property.init_value);
                     props.change_property(weapon_property.prop_type, val);
+                }
+            }
+            if let Some(promote) =
+                snezhnaya_gi_data::excel::weapon_promote_excel_config_collection::get()
+                    .get(&((weapon_config.weapon_promote_id << 8) | weapon.promote_level))
+            {
+                for prop in &promote.add_props {
+                    props.change_property(prop.prop_type, prop.value);
                 }
             }
         }

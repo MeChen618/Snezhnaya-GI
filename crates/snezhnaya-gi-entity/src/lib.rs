@@ -87,6 +87,7 @@ impl Plugin for EntityPlugin {
                 Last,
                 (
                     update_entity_life_state.in_set(EntitySystemSet::HandleEntityDeath),
+                    avatar::sync_avatar_state,
                     notify_disappear_entities.in_set(EntitySystemSet::HandleEntityCleanup),
                     despawn_monster_equipment,
                     remove_marked_entities,
