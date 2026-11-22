@@ -1,0 +1,80 @@
+use crate::common::{FightProperties, Guid, ProtocolEntityID};
+use bevy_ecs::change_detection::Res;
+use bevy_ecs::message::MessageReader;
+use bevy_ecs::prelude::{Changed, Query};
+use snezhnaya_gi_event::entity::{ChangeReason, EntityFightPropChangeReasonNotifyEvent};
+use snezhnaya_gi_event::scene::WorldVersionConfig;
+use snezhnaya_gi_message::output::MessageOutput;
+use snezhnaya_gi_proto::normal::{
+    AvatarFightPropUpdateNotify, EntityFightPropChangeReasonNotify, EntityFightPropUpdateNotify,
+    ProtEntityType,
+};
+
+pub fn notify_fight_properties_to_clients(
+    mut changed_properties: Query<
+        (&mut FightProperties, &ProtocolEntityID, Option<&Guid>),
+        Changed<FightProperties>,
+    >,
+    message_output: Res<MessageOutput>,
+    world_version_config: Res<WorldVersionConfig>,
+) {
+    for (mut properties, entity_id, guid) in changed_properties.iter_mut() {
+        if properties.1.is_empty() {
+            continue;
+        }
+        let fight_prop_map = properties
+            .0
+            .iter()
+            .filter(|(ty, _)| properties.1.contains(ty))
+            .map(|(ty, val)| (*ty as u32, *val))
+            .collect();
+
+        properties.1.clear();
+
+        if entity_id.entity_type(world_version_config.protocol_version.as_str())
+            == ProtEntityType::ProtEntityAvatar
+        {
+            message_output.send_to_all(
+                "AvatarFightPropUpdateNotify",
+                AvatarFightPropUpdateNotify {
+                    avatar_guid: guid.map(|g| g.0).unwrap_or_default(),
+                    fight_prop_map,
+                },
+            );
+        } else {
+            message_output.send_to_all(
+                "EntityFightPropUpdateNotify",
+                EntityFightPropUpdateNotify {
+                    entity_id: entity_id.0,
+                    fight_prop_map,
+                },
+            );
+        }
+    }
+}
+
+pub fn notify_fight_properties_change_reason_to_clients(
+    mut events: MessageReader<EntityFightPropChangeReasonNotifyEvent>,
+    message_output: Res<MessageOutput>,
+) {
+    for event in events.read() {
+        match event.change_reason {
+            ChangeReason::ChangeHpReason(_) => {}
+            ChangeReason::ChangeHpDebtsReason(change_hp_debts_reason) => {
+                message_output.send_to_all(
+                    "EntityFightPropChangeReasonNotify",
+                    EntityFightPropChangeReasonNotify {
+                        entity_id: event.entity_id,
+                        prop_type: event.prop_type as u32,
+                        prop_delta: event.value,
+                        paid_hp_debts: event.value,
+                        reason: event.reason as i32,
+                        change_hp_debts_reason: change_hp_debts_reason as i32,
+                        ..Default::default()
+                    },
+                );
+            }
+            ChangeReason::ChangeEnergyReason(_) => {}
+        }
+    }
+}

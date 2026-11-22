@@ -1,0 +1,14 @@
+pub(crate) mod ability_action_add_global_value;
+pub(crate) mod ability_action_add_hp_debts;
+pub(crate) mod ability_action_clear_global_value;
+pub(crate) mod ability_action_copy_global_value;
+pub(crate) mod ability_action_execute_gadget_lua;
+pub(crate) mod ability_action_get_hp_paid_debts;
+pub(crate) mod ability_action_heal_hp;
+pub(crate) mod ability_action_kill_self;
+pub(crate) mod ability_action_lose_hp;
+pub(crate) mod ability_action_reduce_hp_debts;
+pub(crate) mod ability_action_set_global_value;
+pub(crate) mod ability_action_set_global_value_to_override_map;
+pub(crate) mod ability_action_set_override_map_value;
+pub(crate) mod ability_action_set_random_override_map_value;

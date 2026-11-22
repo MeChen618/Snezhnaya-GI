@@ -1,0 +1,16 @@
+cur_region_name = "dev_snezhnaya_gi"
+region_list_path = "assets/region/region_list.json"
+encryption_config_path = "assets/region/encryption_config.json"
+
+[network]
+gate_host = "127.0.0.1:21002"
+
+[plugin]
+packet_log = false
+ability = true
+ability_log = false
+social = true
+quest = true
+
+[database]
+db_file = "game.db"

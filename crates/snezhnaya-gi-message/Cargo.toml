@@ -1,0 +1,25 @@
+[package]
+name = "snezhnaya-gi-message"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+
+# Logic
+bevy_ecs.workspace = true
+
+# Serialization
+serde.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Util
+hex.workspace = true
+dashmap.workspace = true
+
+# Internal
+common.workspace = true
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-data.workspace = true

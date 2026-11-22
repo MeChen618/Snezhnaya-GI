@@ -1,0 +1,13 @@
+[package]
+name = "snezhnaya-gi-social"
+edition = "2024"
+version.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+common.workspace = true
+
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-message.workspace = true
+snezhnaya-gi-event.workspace = true

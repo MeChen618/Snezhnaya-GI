@@ -1,0 +1,15 @@
+[package]
+name = "snezhnaya-gi-map"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+tracing.workspace = true
+
+snezhnaya-gi-event.workspace = true
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-message.workspace = true
+snezhnaya-gi-data.workspace = true
+snezhnaya-gi-persistence.workspace = true

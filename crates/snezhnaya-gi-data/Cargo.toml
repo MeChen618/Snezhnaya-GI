@@ -1,0 +1,17 @@
+[package]
+name = "snezhnaya-gi-data"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+paste.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+rayon.workspace = true
+dashmap.workspace = true
+mlua.workspace = true
+rstar.workspace = true
+rand.workspace = true
+
+common.workspace = true

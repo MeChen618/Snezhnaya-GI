@@ -1,0 +1,367 @@
+use bevy_ecs::prelude::*;
+use snezhnaya_gi_data::ability::AbilityModifier;
+use snezhnaya_gi_data::prop_type::FightPropType;
+use snezhnaya_gi_entity::common::{
+    EntityById, FightProperties, InstancedAbilities, InstancedAbility, InstancedModifier,
+    InstancedModifiers,
+};
+use snezhnaya_gi_proto::normal::{AbilityMetaModifierChange, ModifierAction};
+
+use crate::util::{eval, get_ability_name};
+use snezhnaya_gi_event::ability::*;
+
+pub fn handle_modifier_change(
+    index: Res<EntityById>,
+    mut events: MessageReader<ModifierChangeEvent>,
+    mut entities: Query<(
+        &mut InstancedAbilities,
+        &mut InstancedModifiers,
+        Option<&mut FightProperties>,
+    )>,
+) {
+    for ModifierChangeEvent(invoke, version) in events.read() {
+        let entity = match index.0.get(&invoke.entity_id) {
+            Some(e) => *e,
+            None => {
+                tracing::debug!(target: "ability", "[ModifierChange] Entity {} not found", invoke.entity_id);
+                continue;
+            }
+        };
+
+        match invoke.head {
+            None => {
+                tracing::debug!(target: "ability", "[ModifierChange] AbilityInvokeEntry head is missing");
+            }
+            Some(head) => {
+                if head.instanced_modifier_id == 0 || head.instanced_modifier_id > 2000 {
+                    continue;
+                }
+
+                match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
+                    AbilityMetaModifierChange,
+                >(version, "AbilityMetaModifierChange", &*invoke.ability_data)
+                {
+                    None => {
+                        tracing::debug!(target: "ability",
+                            "[ModifierChange] Failed to decode AbilityMetaModifierChange"
+                        );
+                    }
+                    Some(mod_change) => {
+                        let instanced_ability_id = head.instanced_ability_id;
+                        let instanced_modifier_id = head.instanced_modifier_id;
+                        let modifier_local_id = mod_change.modifier_local_id as usize;
+                        let target_id = head.target_id;
+                        let mut log_string: String = "unknown".to_string();
+
+                        match mod_change.action() {
+                            ModifierAction::Added => {
+                                tracing::debug!(target: "ability",
+                                    "[ModifierChange] invoke.entity_id: {}",
+                                    invoke.entity_id
+                                );
+                                tracing::debug!(target: "ability", "[ModifierChange] instanced_ability_id: {} instanced_modifier_id: {} modifier_local_id: {} target_id: {}", instanced_ability_id,instanced_modifier_id,modifier_local_id,target_id);
+
+                                let mut instanced_ability_data = None;
+
+                                let mut ability_index = None;
+                                let mut target_entity_ref = None;
+
+                                if target_id != 0 {
+                                    if let Some(target_entity) = index.0.get(&target_id) {
+                                        if let Ok((mut target_abilities, _, _)) =
+                                            entities.get_mut(*target_entity)
+                                        {
+                                            if instanced_ability_data.is_none() {
+                                                match target_abilities.find_by_instanced_ability_id(
+                                                    instanced_ability_id,
+                                                ) {
+                                                    None => {}
+                                                    Some((target_index, target_ability)) => {
+                                                        instanced_ability_data =
+                                                            target_ability.ability_data;
+                                                        if instanced_ability_data.is_some() {
+                                                            log_string = format!(
+                                                                "get from target_id:{} instanced_ability_id:{}",
+                                                                target_id,instanced_ability_id
+                                                            );
+                                                            ability_index = Some(target_index);
+                                                            target_entity_ref =
+                                                                Some(*target_entity);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if instanced_ability_data.is_none() {
+                                                let parent_ability_name = get_ability_name(
+                                                    mod_change.parent_ability_name.clone(),
+                                                )
+                                                .unwrap_or_else(|| "".into());
+                                                if parent_ability_name != "" {
+                                                    match target_abilities
+                                                        .find_or_add_by_ability_name(
+                                                            parent_ability_name.clone(),
+                                                            instanced_ability_id,
+                                                        ) {
+                                                        None => {
+                                                            tracing::debug!(target: "ability",
+                                                                "[ModifierChange] No ability found: {}",
+                                                                parent_ability_name
+                                                            );
+                                                        }
+                                                        Some((target_index, target_ability)) => {
+                                                            instanced_ability_data =
+                                                                target_ability.ability_data;
+                                                            if instanced_ability_data.is_some() {
+                                                                log_string = format!(
+                                                                    "get from target_id:{}  parent_ability_name:{}",
+                                                                    target_id,parent_ability_name
+                                                                );
+                                                                ability_index = Some(target_index);
+                                                                target_entity_ref =
+                                                                    Some(*target_entity);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let Ok((
+                                    mut this_instanced_abilities,
+                                    mut this_instanced_modifiers,
+                                    mut fight_properties,
+                                )) = entities.get_mut(entity)
+                                else {
+                                    tracing::debug!(target: "ability",
+                                        "[ModifierChange] Failed to get entity components for {}",
+                                        invoke.entity_id
+                                    );
+                                    continue;
+                                };
+
+                                if instanced_ability_data.is_none() {
+                                    match this_instanced_abilities
+                                        .find_by_instanced_ability_id(instanced_ability_id)
+                                    {
+                                        None => {}
+                                        Some((this_index, this_ability)) => {
+                                            instanced_ability_data = this_ability.ability_data;
+                                            if instanced_ability_data.is_some() {
+                                                log_string = format!(
+                                                    "get from entity instanced_ability_id:{}",
+                                                    instanced_ability_id
+                                                );
+                                                ability_index = Some(this_index);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if instanced_ability_data.is_none() {
+                                    let parent_ability_name =
+                                        get_ability_name(mod_change.parent_ability_name.clone())
+                                            .unwrap_or_else(|| "".into());
+                                    if parent_ability_name != "" {
+                                        match this_instanced_abilities.find_or_add_by_ability_name(
+                                            parent_ability_name.clone(),
+                                            instanced_ability_id,
+                                        ) {
+                                            None => {
+                                                tracing::debug!(target: "ability",
+                                                    "[ModifierChange] No ability found: {}",
+                                                    parent_ability_name
+                                                );
+                                            }
+                                            Some((this_index, this_ability)) => {
+                                                instanced_ability_data = this_ability.ability_data;
+                                                if instanced_ability_data.is_some() {
+                                                    log_string = format!(
+                                                        "get from entity parent_ability_name:{}",
+                                                        parent_ability_name
+                                                    );
+                                                    ability_index = Some(this_index);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let Some(ability_data) = instanced_ability_data else {
+                                    continue;
+                                };
+
+                                let modifier_data = match ability_data
+                                    .modifiers
+                                    .get_index(modifier_local_id)
+                                {
+                                    Some((_, m)) => m,
+                                    None => {
+                                        tracing::debug!(target: "ability",
+                                            "[ModifierChange] Modifier local id {} not found in ability {}",
+                                            modifier_local_id,
+                                            ability_data.ability_name
+                                        );
+                                        continue;
+                                    }
+                                };
+
+                                let is_replacing = this_instanced_modifiers
+                                    .modifiers
+                                    .contains_key(&instanced_modifier_id);
+
+                                tracing::debug!(target: "ability", "[ModifierChange] log_string:{}", log_string);
+
+                                if is_replacing {
+                                    tracing::debug!(target: "ability", "[ModifierChange] Replacing entity {} instanced_modifier_id: {} with ability {} modifier {}",
+                                        invoke.entity_id,
+                                        instanced_modifier_id,
+                                        ability_data.ability_name,
+                                        modifier_data.modifier_name
+                                    );
+                                } else {
+                                    tracing::debug!(target: "ability", "[ModifierChange] Adding entity {} instanced_modifier_id: {} with ability {} modifier {}",
+                                        invoke.entity_id,
+                                        instanced_modifier_id,
+                                        ability_data.ability_name,
+                                        modifier_data.modifier_name
+                                    );
+                                }
+
+                                match ability_index {
+                                    None => {
+                                        continue;
+                                    }
+                                    Some(ability_index) => {
+                                        let modifier_controller = InstancedModifier::new(
+                                            instanced_modifier_id,
+                                            modifier_data.modifier_name,
+                                            ability_index,
+                                            target_entity_ref,
+                                        );
+
+                                        this_instanced_modifiers
+                                            .insert(instanced_modifier_id, modifier_controller);
+
+                                        if let Some(ability) = this_instanced_abilities
+                                            .list
+                                            .get_mut(ability_index as usize)
+                                        {
+                                            apply_modifier_properties(
+                                                modifier_data,
+                                                ability,
+                                                fight_properties.as_deref_mut(),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            ModifierAction::Removed => {
+                                let Ok((
+                                    mut this_instanced_abilities,
+                                    mut this_instanced_modifiers,
+                                    mut fight_properties,
+                                )) = entities.get_mut(entity)
+                                else {
+                                    tracing::debug!(target: "ability",
+                                        "[ModifierChange] Failed to get entity components for {}",
+                                        invoke.entity_id
+                                    );
+                                    continue;
+                                };
+                                tracing::debug!(target: "ability",
+                                    "[ModifierChange] Removed on entity {} instanced_modifier_id: {}",
+                                    invoke.entity_id,
+                                    instanced_modifier_id,
+                                );
+
+                                if let Some(modifier_controller) =
+                                    this_instanced_modifiers.get(&instanced_modifier_id)
+                                {
+                                    if let Some(modifier_data) = &modifier_controller.modifier_data
+                                    {
+                                        if let Some(ability) =
+                                            modifier_controller.ability_index.and_then(|idx| {
+                                                this_instanced_abilities.list.get_mut(idx as usize)
+                                            })
+                                        {
+                                            remove_modifier_properties(
+                                                modifier_data,
+                                                ability,
+                                                fight_properties.as_deref_mut(),
+                                            );
+                                        }
+                                    }
+                                }
+
+                                this_instanced_modifiers.remove(&instanced_modifier_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn apply_modifier_properties(
+    modifier: &AbilityModifier,
+    ability: &InstancedAbility,
+    fight_properties: Option<&mut FightProperties>,
+) {
+    if let Some(fight_properties) = fight_properties {
+        if let Some(properties) = &modifier.properties {
+            if let Some(max_hp_ratio) = &properties.actor_max_hp_ratio {
+                let value = eval(ability, Some(fight_properties), max_hp_ratio, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_HP_PERCENT, value);
+            }
+
+            if let Some(attack_s_ratio) = &properties.actor_attack_s_ratio {
+                let value = eval(ability, Some(fight_properties), attack_s_ratio, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_ATTACK_PERCENT, value);
+            }
+
+            if let Some(healed_add_delta) = &properties.actor_healed_add_delta {
+                let value = eval(ability, Some(fight_properties), healed_add_delta, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_HEALED_ADD, value);
+            }
+
+            if modifier.bonus_critical > 0.0 {
+                fight_properties
+                    .change_property(FightPropType::FIGHT_PROP_CRITICAL, modifier.bonus_critical);
+            }
+        }
+    }
+}
+
+fn remove_modifier_properties(
+    modifier: &AbilityModifier,
+    ability: &InstancedAbility,
+    fight_properties: Option<&mut FightProperties>,
+) {
+    if let Some(fight_properties) = fight_properties {
+        if let Some(properties) = &modifier.properties {
+            if let Some(max_hp_ratio) = &properties.actor_max_hp_ratio {
+                let value = -eval(ability, Some(fight_properties), max_hp_ratio, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_HP_PERCENT, value);
+            }
+
+            if let Some(attack_s_ratio) = &properties.actor_attack_s_ratio {
+                let value = -eval(ability, Some(fight_properties), attack_s_ratio, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_ATTACK_PERCENT, value);
+            }
+
+            if let Some(healed_add_delta) = &properties.actor_healed_add_delta {
+                let value = -eval(ability, Some(fight_properties), healed_add_delta, 0.0);
+                fight_properties.change_property(FightPropType::FIGHT_PROP_HEALED_ADD, value);
+            }
+
+            if modifier.bonus_critical > 0.0 {
+                fight_properties
+                    .change_property(FightPropType::FIGHT_PROP_CRITICAL, -modifier.bonus_critical);
+            }
+        }
+    }
+}

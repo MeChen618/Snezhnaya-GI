@@ -1,0 +1,15 @@
+// Dump by Asta
+// Game: GI (Genshin Impact) | Client: 7.2.0
+syntax = "proto3";
+package recovered72.options;
+import "google/protobuf/descriptor.proto";
+message ScalarTransform {
+  uint32 bit_width = 1;
+  bool is_masked = 2;
+  string value_mask = 3;
+  string value_unmask = 4;
+  string evidence_rva = 5;
+}
+extend google.protobuf.FieldOptions {
+  ScalarTransform scalar_transform = 51072;
+}

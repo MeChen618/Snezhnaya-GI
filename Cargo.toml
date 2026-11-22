@@ -1,0 +1,185 @@
+[profile.dev]
+opt-level = 1
+debug = 0
+incremental = false
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[workspace]
+members = [
+    "crates/snezhnaya-gi-data",
+    "crates/snezhnaya-gi-database",
+    "crates/snezhnaya-gi-encryption",
+    "crates/snezhnaya-gi-entity",
+    "crates/snezhnaya-gi-event",
+    "crates/snezhnaya-gi-proto",
+    "crates/snezhnaya-gi-scene",
+    "crates/snezhnaya-gi-message",
+    "crates/kcp",
+    "crates/common",
+    "crates/dispatch-server",
+    "crates/game-server",
+    "crates/game-server-core",
+    "crates/snezhnaya-gi-persistence",
+    "crates/snezhnaya-gi-misc",
+    "crates/snezhnaya-gi-map",
+    "crates/snezhnaya-gi-command",
+    "crates/snezhnaya-gi-combat",
+    "crates/snezhnaya-gi-ability",
+    "crates/snezhnaya-gi-luashell",
+    "crates/snezhnaya-gi-environment",
+    "crates/snezhnaya-gi-inventory",
+    "crates/snezhnaya-gi-avatar",
+    "crates/snezhnaya-gi-quest",
+    "crates/snezhnaya-gi-social",
+    "crates/snezhnaya-gi-script",
+    "crates/snezhnaya-gi-event",
+    "crates/snezhnaya-gi-banner",
+]
+resolver = "2"
+
+[workspace.package]
+version = "7.2.0"
+
+[workspace.dependencies]
+# Runtime
+crossbeam-queue = "0.3.12"
+tokio = { version = "1.49.0", features = ["full"] }
+axum = "0.8.8"
+axum-server = "0.8.0"
+
+# Logic
+bevy_app = { version = "0.17.3", default-features = false }
+bevy_ecs = { version = "0.17.3", default-features = false }
+bevy_derive = "0.17.3"
+
+# Serialization
+mlua = { version = "0.11.1", features = ["lua54", "vendored", "serialize", "send"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149" }
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
+toml = "0.8"
+base64-simd = "0.8"
+
+prost = "0.14.1"
+prost-build = "0.14.1"
+
+#protobuf = { path = "../rust-protobuf/protobuf" }
+#protobuf-json-mapping = { path = "../rust-protobuf/protobuf-json-mapping" }
+#protobuf-parse = { path = "../rust-protobuf/protobuf-parse" }
+
+protobuf = "3.7.2"
+protobuf-json-mapping = "3.7.2"
+protobuf-parse = "3.7.2"
+
+# Error processing
+anyhow = "1.0.102"
+thiserror = "2.0.18"
+
+# Networking
+
+# Cryptography
+rsa = { version = "0.9.10", features = ["sha2"] }
+rand_mt = "5.0.0"
+password-hash = { version = "0.5.0", features = ["alloc", "rand_core"] }
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+
+# Database
+rocksdb = "0.24.0"
+
+# Encoding
+byteorder = "1.5.0"
+
+# Util
+paste = "1.0.15"
+rand = { version = "0.8", features = ["small_rng"] }
+regex = "1.11.1"
+hex = "0.4.3"
+num_enum = "0.7.3"
+dashmap = "6.1.0"
+indexmap = { version = "2.7.1", features = ["serde"] }
+notify = "8.0.0"
+rayon = "1.10.0"
+rstar = "0.12.2"
+
+# Logging
+tracing = { version = "*" }
+tracing-subscriber = { version = "*", features = ["env-filter"] }
+
+# Internal
+common = { path = "crates/common" }
+kcp = { path = "crates/kcp", features = ["tokio"] }
+snezhnaya-gi-data = { path = "crates/snezhnaya-gi-data" }
+snezhnaya-gi-database = { path = "crates/snezhnaya-gi-database" }
+snezhnaya-gi-encryption = { path = "crates/snezhnaya-gi-encryption" }
+snezhnaya-gi-proto = { path = "crates/snezhnaya-gi-proto" }
+snezhnaya-gi-entity = { path = "crates/snezhnaya-gi-entity" }
+snezhnaya-gi-event = { path = "crates/snezhnaya-gi-event" }
+snezhnaya-gi-avatar = { path = "crates/snezhnaya-gi-avatar" }
+snezhnaya-gi-banner = { path = "crates/snezhnaya-gi-banner" }
+snezhnaya-gi-scene = { path = "crates/snezhnaya-gi-scene" }
+snezhnaya-gi-environment = { path = "crates/snezhnaya-gi-environment" }
+snezhnaya-gi-pathfinding = { path = "crates/snezhnaya-gi-pathfinding" }
+snezhnaya-gi-combat = { path = "crates/snezhnaya-gi-combat" }
+snezhnaya-gi-ability = { path = "crates/snezhnaya-gi-ability" }
+snezhnaya-gi-social = { path = "crates/snezhnaya-gi-social" }
+snezhnaya-gi-quest = { path = "crates/snezhnaya-gi-quest" }
+snezhnaya-gi-script = { path = "crates/snezhnaya-gi-script" }
+snezhnaya-gi-misc = { path = "crates/snezhnaya-gi-misc" }
+snezhnaya-gi-map = { path = "crates/snezhnaya-gi-map" }
+snezhnaya-gi-inventory = { path = "crates/snezhnaya-gi-inventory" }
+snezhnaya-gi-command = { path = "crates/snezhnaya-gi-command" }
+snezhnaya-gi-message = { path = "crates/snezhnaya-gi-message" }
+snezhnaya-gi-persistence = { path = "crates/snezhnaya-gi-persistence" }
+snezhnaya-gi-luashell = { path = "crates/snezhnaya-gi-luashell" }
+game-server-core = { path = "crates/game-server-core" }
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+branches_sharing_code = "allow"
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+checked_conversions = "allow"
+cognitive_complexity = "allow"
+collection_is_never_read = "allow"
+fallible_impl_from = "allow"
+fn_params_excessive_bools = "allow"
+inline_always = "allow"
+if_not_else = "allow"
+items_after_statements = "allow"
+match_wildcard_for_single_variants = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+multiple_crate_versions = "allow"
+option_if_let_else = "allow"
+or_fun_call = "allow"
+range_plus_one = "allow"
+redundant_clone = "allow"
+redundant_closure_for_method_calls = "allow"
+ref_option = "allow"
+similar_names = "allow"
+string_lit_as_bytes = "allow"
+struct_excessive_bools = "allow"
+struct_field_names = "allow"
+transmute_undefined_repr = "allow"
+too_many_lines = "allow"
+unnecessary_wraps = "allow"
+unused_self = "allow"
+used_underscore_items = "allow"
+
+
+[profile.release]
+strip = true      # Automatically strip symbols from the binary.
+lto = true        # Link-time optimization.
+opt-level = 3     # Optimize for speed.
+codegen-units = 1 # Maximum size reduction optimizations.

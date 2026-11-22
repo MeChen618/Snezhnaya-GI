@@ -1,0 +1,555 @@
+use crate::{
+    dynamic_float::{any_to_float, any_to_float_hashmap},
+    DynamicFloat,
+};
+use indexmap::IndexMap;
+use rayon::prelude::*;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AbilityConfigWrapper {
+    #[serde(alias = "Default")]
+    pub default: AbilityData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityData {
+    #[serde(alias = "$type")]
+    #[serde(default)]
+    pub type_name: InternString,
+    pub ability_name: InternString,
+    #[serde(default, deserialize_with = "deserialize_modifiers")]
+    pub modifiers: IndexMap<InternString, AbilityModifier>,
+    #[serde(default)]
+    pub ability_mixins: Vec<AbilityMixinData>,
+    #[serde(default, deserialize_with = "any_to_float_hashmap")]
+    pub ability_specials: HashMap<InternString, f32>,
+    #[serde(default)]
+    pub is_dynamic_ability: bool,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_added: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_removed: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_ability_start: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_kill: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_field_enter: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_field_exit: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_attach: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_detach: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_avatar_in: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_avatar_out: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_trigger_avatar_ray: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_vehicle_in: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_vehicle_out: Vec<AbilityModifierAction>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityModifier {
+    #[serde(skip)]
+    pub modifier_name: InternString,
+    #[serde(default)]
+    pub bonus_critical: f32,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_added: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_removed: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_being_hit: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_attack_landed: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_hitting_other: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_think_interval: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_kill: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_crash: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_avatar_in: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_avatar_out: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_reconnect: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_change_authority: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_vehicle_in: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_vehicle_out: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_zone_enter: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_zone_exit: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_heal: Vec<AbilityModifierAction>,
+    #[serde(default, deserialize_with = "skip_strings_in_vec")]
+    pub on_being_healed: Vec<AbilityModifierAction>,
+    #[serde(default)]
+    pub modifier_mixins: Vec<AbilityMixinData>,
+    #[serde(default)]
+    pub properties: Option<AbilityModifierProperty>,
+    #[serde(default)]
+    pub stacking: InternString,
+    #[serde(default)]
+    pub duration: Option<DynamicFloat>,
+    #[serde(default)]
+    pub think_interval: Option<DynamicFloat>,
+    #[serde(default)]
+    pub element_durability: Option<DynamicFloat>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityModifierAction {
+    #[serde(alias = "$type")]
+    #[serde(default)]
+    pub type_name: InternString,
+    #[serde(default)]
+    pub target: AbilityTargettingEnum,
+    pub amount: Option<DynamicFloat>,
+    #[serde(alias = "amountByCasterAttackRatio")]
+    #[serde(default)]
+    pub amount_by_caster_attack_ratio: Option<DynamicFloat>,
+    #[serde(alias = "amountByCasterCurrentHPRatio")]
+    #[serde(default)]
+    pub amount_by_caster_current_hp_ratio: Option<DynamicFloat>,
+    #[serde(alias = "amountByCasterMaxHPRatio")]
+    #[serde(default)]
+    pub amount_by_caster_max_hp_ratio: Option<DynamicFloat>,
+    #[serde(alias = "amountByGetDamage")]
+    #[serde(default)]
+    pub amount_by_get_damage: Option<DynamicFloat>,
+    #[serde(alias = "amountByTargetCurrentHPRatio")]
+    #[serde(default)]
+    pub amount_by_target_current_hp_ratio: Option<DynamicFloat>,
+    #[serde(alias = "amountByTargetMaxHPRatio")]
+    #[serde(default)]
+    pub amount_by_target_max_hp_ratio: Option<DynamicFloat>,
+    #[serde(alias = "limboByTargetMaxHPRatio")]
+    #[serde(default)]
+    pub limbo_by_target_max_hp_ratio: Option<DynamicFloat>,
+    pub heal_ratio: Option<DynamicFloat>,
+    pub speed: Option<DynamicFloat>,
+    #[serde(default)]
+    pub ignore_ability_property: bool,
+    #[serde(default)]
+    pub modifier_name: InternString,
+    #[serde(alias = "enableLockHP")]
+    #[serde(default)]
+    pub enable_lock_hp: bool,
+    #[serde(default)]
+    pub lethal: bool,
+    #[serde(default)]
+    pub by_server: bool,
+    #[serde(default)]
+    pub gadget_id: u32,
+    #[serde(default)]
+    pub state_id: u32,
+    #[serde(default)]
+    pub skill_id: u32,
+    #[serde(default)]
+    pub config_id: u32,
+    #[serde(default)]
+    pub camp_id: u32,
+    #[serde(default)]
+    pub monster_id: u32,
+    #[serde(default)]
+    pub summon_tag: u32,
+    #[serde(default)]
+    pub min_value: Option<DynamicFloat>,
+    #[serde(default)]
+    pub max_value: Option<DynamicFloat>,
+    #[serde(default)]
+    pub target_value: Option<DynamicFloat>,
+    #[serde(default)]
+    pub cost_stamina_ratio: Option<DynamicFloat>,
+    #[serde(default)]
+    pub use_limit_range: bool,
+    #[serde(default)]
+    pub base_energy: Option<DynamicFloat>,
+    #[serde(default)]
+    pub ratio: Option<DynamicFloat>,
+    #[serde(default, deserialize_with = "any_to_float")]
+    pub value_range_min: f32,
+    #[serde(default, deserialize_with = "any_to_float")]
+    pub value_range_max: f32,
+    #[serde(default)]
+    pub determine_type: InternString,
+    #[serde(default)]
+    pub override_map_key: InternString,
+    #[serde(default)]
+    pub param_num: u32,
+    #[serde(default)]
+    pub param1: Option<DynamicFloat>,
+    #[serde(default)]
+    pub param2: Option<DynamicFloat>,
+    #[serde(default)]
+    pub param3: Option<DynamicFloat>,
+    #[serde(default)]
+    pub key: InternString,
+    #[serde(default)]
+    pub ability_name: InternString,
+    #[serde(default)]
+    pub global_value_key: InternString,
+    #[serde(default)]
+    pub ability_formula: InternString,
+    #[serde(default)]
+    pub src_target: InternString,
+    #[serde(default)]
+    pub dst_target: InternString,
+    #[serde(default)]
+    pub src_key: InternString,
+    #[serde(default)]
+    pub dst_key: InternString,
+    #[serde(default)]
+    pub heal_tag: InternString,
+    #[serde(default)]
+    pub camp_target_type: InternString,
+    #[serde(default)]
+    pub func_name: InternString,
+    #[serde(default)]
+    pub lua_call_type: InternString,
+    #[serde(default)]
+    pub content: InternString,
+    #[serde(default)]
+    pub parameter: InternString,
+    #[serde(default)]
+    pub value: Option<DynamicFloat>,
+    #[serde(default)]
+    pub type_field: InternString,
+    #[serde(alias = "healLimitedByCasterMaxHPRatio")]
+    #[serde(default)]
+    pub heal_limited_by_caster_max_hp_ratio: Option<DynamicFloat>,
+    #[serde(default)]
+    pub effect_templete_id: f32,
+    #[serde(default)]
+    pub actions: Vec<AbilityModifierAction>,
+    #[serde(default)]
+    pub success_actions: Vec<AbilityModifierAction>,
+    #[serde(default)]
+    pub fail_actions: Vec<AbilityModifierAction>,
+    #[serde(default)]
+    pub other_targets: Option<Box<AbilityModifierAction>>,
+    #[serde(default)]
+    pub call_param_list: Vec<u32>,
+    #[serde(default)]
+    pub duration_ratio: f32,
+    #[serde(default)]
+    pub element_type: ElementType,
+    #[serde(default)]
+    pub skill_slot: Vec<u32>,
+    #[serde(default)]
+    pub cd_delta: Option<DynamicFloat>,
+    #[serde(default)]
+    pub cd_ratio: Option<DynamicFloat>,
+    #[serde(default)]
+    pub is_add: bool,
+    #[serde(default)]
+    pub ban_drop: bool,
+    #[serde(default, alias = "banHPPercentageDrop")]
+    pub ban_hppercentage_drop: bool,
+    #[serde(default)]
+    pub kill_self_type: InternString,
+    #[serde(default)]
+    pub is_from_owner: bool,
+    #[serde(default)]
+    pub duration: Option<DynamicFloat>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityMixinData {
+    #[serde(alias = "$type")]
+    #[serde(default)]
+    pub type_name: InternString,
+    #[serde(default)]
+    pub modifier_name: serde_json::Value,
+    #[serde(default)]
+    pub state_ids: Vec<InternString>,
+    #[serde(default, alias = "stateID")]
+    pub state_id: InternString,
+    #[serde(default)]
+    pub global_value_key: InternString,
+    #[serde(default)]
+    pub speed: Option<DynamicFloat>,
+    #[serde(default)]
+    pub cost_stamina_delta: Option<DynamicFloat>,
+    #[serde(default)]
+    pub ratio: Option<DynamicFloat>,
+    #[serde(default)]
+    pub default_global_value_on_create: Option<DynamicFloat>,
+    #[serde(default, deserialize_with = "deserialize_modifier_steps")]
+    pub modifier_name_steps: Vec<Value>,
+    #[serde(default)]
+    pub normalize_start: f32,
+    #[serde(default)]
+    pub normalize_end: f32,
+    #[serde(default)]
+    pub value_steps: Vec<DynamicFloat>,
+    #[serde(default)]
+    pub remove_applied_modifier: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbilityModifierProperty {
+    #[serde(alias = "Actor_HpThresholdRatio")]
+    #[serde(default)]
+    pub actor_hp_threshold_ratio: Option<DynamicFloat>,
+    #[serde(alias = "Actor_MaxHPRatio")]
+    #[serde(default)]
+    pub actor_max_hp_ratio: Option<DynamicFloat>,
+    #[serde(alias = "Actor_AttackSRatio")]
+    #[serde(default)]
+    pub actor_attack_s_ratio: Option<DynamicFloat>,
+    #[serde(alias = "Actor_HealedAddDelta")]
+    #[serde(default)]
+    pub actor_healed_add_delta: Option<DynamicFloat>,
+}
+
+#[derive(Debug, Default, Copy, Clone, serde::Deserialize, PartialEq, Eq)]
+pub enum AbilityTargettingEnum {
+    #[default]
+    #[serde(alias = "Self")]
+    Self_ = 0,
+    #[serde(alias = "Caster")]
+    Caster = 1,
+    #[serde(alias = "Target")]
+    Target = 2,
+    #[serde(alias = "SelfAttackTarget")]
+    SelfAttackTarget = 3,
+    #[serde(alias = "Other")]
+    Other = 4,
+    #[serde(alias = "Applier")]
+    Applier = 5,
+    #[serde(alias = "Owner")]
+    Owner = 6,
+    #[serde(alias = "CurTeamAvatars")]
+    CurTeamAvatars = 7,
+    #[serde(alias = "CurLocalAvatar")]
+    CurLocalAvatar = 8,
+    #[serde(alias = "OriginOwner")]
+    OriginOwner = 9,
+    #[serde(alias = "Team")]
+    Team = 10,
+    #[serde(alias = "TargetOwner")]
+    TargetOwner = 11,
+    #[serde(alias = "TargetOriginOwner")]
+    TargetOriginOwner = 12,
+    #[serde(alias = "AllPlayerAvatars")]
+    AllPlayerAvatars = 13,
+    #[serde(alias = "AllTeams")]
+    AllTeams = 14,
+    #[serde(alias = "RemoteTeams")]
+    RemoteTeams = 15,
+    #[serde(alias = "TargetTeam")]
+    TargetTeam = 16,
+    #[serde(alias = "CasterOwner")]
+    CasterOwner = 17,
+    #[serde(alias = "CasterOriginOwner")]
+    CasterOriginOwner = 18,
+    #[serde(alias = "MPLevel")]
+    MPLevel = 19,
+}
+
+impl From<&str> for AbilityTargettingEnum {
+    fn from(value: &str) -> Self {
+        match value {
+            "Self" => AbilityTargettingEnum::Self_,
+            "Caster" => AbilityTargettingEnum::Caster,
+            "Target" => AbilityTargettingEnum::Target,
+            "SelfAttackTarget" => AbilityTargettingEnum::SelfAttackTarget,
+            "Other" => AbilityTargettingEnum::Other,
+            "Applier" => AbilityTargettingEnum::Applier,
+            "Owner" => AbilityTargettingEnum::Owner,
+            "CurTeamAvatars" => AbilityTargettingEnum::CurTeamAvatars,
+            "CurLocalAvatar" => AbilityTargettingEnum::CurLocalAvatar,
+            "OriginOwner" => AbilityTargettingEnum::OriginOwner,
+            "Team" => AbilityTargettingEnum::Team,
+            "TargetOwner" => AbilityTargettingEnum::TargetOwner,
+            "TargetOriginOwner" => AbilityTargettingEnum::TargetOriginOwner,
+            "AllPlayerAvatars" => AbilityTargettingEnum::AllPlayerAvatars,
+            "AllTeams" => AbilityTargettingEnum::AllTeams,
+            "RemoteTeams" => AbilityTargettingEnum::RemoteTeams,
+            "TargetTeam" => AbilityTargettingEnum::TargetTeam,
+            "CasterOwner" => AbilityTargettingEnum::CasterOwner,
+            "CasterOriginOwner" => AbilityTargettingEnum::CasterOriginOwner,
+            "MPLevel" => AbilityTargettingEnum::MPLevel,
+            _ => AbilityTargettingEnum::Self_,
+        }
+    }
+}
+
+use crate::excel::common::ElementType;
+use common::string_util::InternString;
+use serde::Deserializer;
+use serde_json::Value;
+
+fn deserialize_modifiers<'de, D>(
+    deserializer: D,
+) -> Result<IndexMap<InternString, AbilityModifier>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut map = IndexMap::<InternString, AbilityModifier>::deserialize(deserializer)?;
+
+    for (k, v) in map.iter_mut() {
+        v.modifier_name = k.clone();
+    }
+
+    let mut entries: Vec<_> = map.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut sorted_map = IndexMap::new();
+    for (k, v) in entries {
+        sorted_map.insert(k, v);
+    }
+
+    Ok(sorted_map)
+}
+
+pub fn skip_strings_in_vec<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Array(arr) => {
+            let mut result = vec![];
+            for item in arr {
+                if !item.is_string() {
+                    if let Ok(t) = T::deserialize(item) {
+                        result.push(t);
+                    }
+                } else {
+                    println!("skip string: {:?}", item);
+                }
+            }
+            Ok(result)
+        }
+        Value::Null => Ok(vec![]),
+        _ => Ok(vec![]),
+    }
+}
+
+fn deserialize_modifier_steps<'de, D>(deserializer: D) -> Result<Vec<Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // 新版还包含带范围条件的对象，完整保留，不能当作无条件名称。
+    match Value::deserialize(deserializer)? {
+        value @ Value::String(_) => Ok(vec![value]),
+        Value::Array(values) => Ok(values),
+        Value::Null => Ok(Vec::new()),
+        _ => Err(serde::de::Error::custom(
+            "expected modifier step string or list",
+        )),
+    }
+}
+
+static ABILITY_DATA_MAP: std::sync::OnceLock<HashMap<InternString, AbilityData>> =
+    std::sync::OnceLock::new();
+
+static ABILITY_HASH_MAP: std::sync::OnceLock<HashMap<u32, InternString>> =
+    std::sync::OnceLock::new();
+
+fn load_ability_configs_recursive(
+    dir: std::fs::ReadDir,
+    map: &Mutex<HashMap<InternString, AbilityData>>,
+) -> std::io::Result<()> {
+    let entries: Vec<_> = dir.collect::<std::io::Result<_>>()?;
+
+    let mut subdirs = Vec::new();
+    let mut json_files = Vec::new();
+
+    for entry in &entries {
+        let path = entry.path();
+        if path.is_dir() {
+            subdirs.push(path);
+        } else if path.extension().map_or(false, |ext| ext == "json") {
+            json_files.push(path);
+        }
+    }
+
+    for subdir in subdirs {
+        load_ability_configs_recursive(std::fs::read_dir(&subdir)?, map)?;
+    }
+
+    json_files
+        .par_iter()
+        .try_for_each(|path| -> std::io::Result<()> {
+            let json = std::fs::read(path)?;
+            let json = common::string_util::strip_json_comments_bytes(&json);
+            let wrappers: Vec<AbilityConfigWrapper> =
+                serde_json::from_slice(&json).map_err(|error| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("{}: {error}", path.display()),
+                    )
+                })?;
+            let mut map_guard = map.lock().unwrap();
+            for wrapper in wrappers {
+                map_guard.insert(wrapper.default.ability_name.clone(), wrapper.default);
+            }
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
+pub fn load_ability_configs_from_bin(bin_output_path: &str) -> std::io::Result<()> {
+    let map = Mutex::new(HashMap::new());
+    let ability_dir = std::fs::read_dir(format!("{bin_output_path}/Ability/Temp/"))?;
+    load_ability_configs_recursive(ability_dir, &map)?;
+
+    let mut hash_map = HashMap::new();
+    {
+        let map_guard = map.lock().unwrap();
+        // println!("Ability Name -> Hash Mapping:");
+        // println!("================================");
+        for (name, _) in map_guard.iter() {
+            let hash = common::string_util::get_string_hash(name.as_str());
+            // println!("{} -> {}", name, hash);
+            hash_map.insert(hash, name.clone());
+        }
+
+        // println!("================================");
+        // println!("Total abilities loaded: {}", map_guard.len());
+    }
+
+    let map_inner = map.into_inner().unwrap();
+    let _ = ABILITY_DATA_MAP.set(map_inner);
+    let _ = ABILITY_HASH_MAP.set(hash_map);
+    Ok(())
+}
+
+pub fn get_ability_data(name: &InternString) -> Option<&'static AbilityData> {
+    ABILITY_DATA_MAP.get().and_then(|map| map.get(name))
+}
+
+pub fn get_ability_name_by_hash(hash: u32) -> Option<InternString> {
+    ABILITY_HASH_MAP
+        .get()
+        .and_then(|map| map.get(&hash).cloned())
+}
+
+pub fn iter_ability_data_map(
+) -> std::collections::hash_map::Iter<'static, InternString, AbilityData> {
+    ABILITY_DATA_MAP.get().unwrap().iter()
+}

@@ -1,0 +1,21 @@
+[package]
+name = "snezhnaya-gi-script"
+edition = "2024"
+version.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+crossbeam-queue.workspace = true
+tracing.workspace = true
+mlua.workspace = true
+
+common.workspace = true
+
+snezhnaya-gi-event.workspace = true
+snezhnaya-gi-entity.workspace = true
+snezhnaya-gi-data.workspace = true
+snezhnaya-gi-scene.workspace = true
+snezhnaya-gi-persistence.workspace = true
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-message.workspace = true

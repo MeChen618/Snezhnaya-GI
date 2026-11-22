@@ -1,0 +1,24 @@
+[
+  {
+    "name": "dev_snezhnaya_gi",
+    "title": "SnezhnayaGI 7.2",
+    "type": "DEV_PUBLIC",
+    "bind_version_list": [
+      "CNRELWin7.2.0",
+      "OSRELWin7.2.0",
+      "CNRELAndroid7.2.0",
+      "OSRELAndroid7.2.0",
+      "CNRELiOS7.2.0",
+      "OSRELiOS7.2.0"
+    ],
+    "allowed_key_id_list": [
+      4,
+      5
+    ],
+    "dispatch_url": "http://127.0.0.1:21001/query_cur_region",
+    "gateserver_ip": "127.0.0.1",
+    "gateserver_port": 21002,
+    "secret_key_path": "assets/region/client_secret_key.ec2b",
+    "hot_fix_data": {}
+  }
+]

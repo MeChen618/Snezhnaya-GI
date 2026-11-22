@@ -1,0 +1,106 @@
+use crate::util::eval_option;
+use bevy_ecs::prelude::*;
+use snezhnaya_gi_data::prop_type::FightPropType;
+
+use snezhnaya_gi_entity::common::ProtocolEntityID;
+use snezhnaya_gi_event::ability::ExecuteActionEvent;
+use snezhnaya_gi_event::entity::{ChangeReason, EntityFightPropChangeReasonNotifyEvent};
+use snezhnaya_gi_proto::normal::{ChangeHpDebtsReason, PropChangeReason};
+
+pub fn ability_action_reduce_hp_debts_event(
+    mut events: MessageReader<ExecuteActionEvent>,
+    mut fight_props_query: Query<(
+        &ProtocolEntityID,
+        &mut snezhnaya_gi_entity::common::FightProperties,
+    )>,
+    abilities_query: Query<&snezhnaya_gi_entity::common::InstancedAbilities>,
+    mut reason_events: MessageWriter<EntityFightPropChangeReasonNotifyEvent>,
+) {
+    for ExecuteActionEvent(ability_index, ability_entity, action, _ability_data, target_entity) in
+        events.read()
+    {
+        if action.type_name != "ReduceHPDebts" {
+            continue;
+        }
+
+        let target_entity = target_entity.unwrap_or(*ability_entity);
+
+        let Ok((target_entity_id, mut fight_props)) = fight_props_query.get_mut(target_entity)
+        else {
+            tracing::debug!(target: "ability",
+                "[ability_action_reduce_hp_debts_event] Failed to get fight properties for entity {}",
+                target_entity
+            );
+            continue;
+        };
+
+        let Ok(abilities) = abilities_query.get(*ability_entity) else {
+            tracing::debug!(target: "ability",
+                "[ability_action_reduce_hp_debts_event] Failed to get abilities for entity {}",
+                ability_entity
+            );
+            continue;
+        };
+
+        let ability = match abilities.list.get(*ability_index as usize) {
+            Some(ability) => ability,
+            None => {
+                tracing::debug!(target: "ability",
+                    "[ability_action_reduce_hp_debts_event] Failed to get ability at index {} for entity {}",
+                    ability_index,
+                    ability_entity
+                );
+                continue;
+            }
+        };
+
+        let debt_reduction = eval_option(ability, Some(&fight_props), &action.value, 0.0);
+        tracing::debug!(target: "ability",
+            "[ability_action_reduce_hp_debts_event] Calculated debt reduction: {}",
+            debt_reduction
+        );
+
+        let cur_debt = fight_props.get_property(FightPropType::FIGHT_PROP_CUR_HP_DEBTS);
+        let mut new_debt = cur_debt - debt_reduction;
+
+        if new_debt < 0.0 {
+            new_debt = 0.0;
+        }
+
+        let max_hp = fight_props.get_property(FightPropType::FIGHT_PROP_MAX_HP);
+        let max_debt_limit = 2.0 * max_hp;
+        if new_debt > max_debt_limit {
+            tracing::warn!(target: "ability","[ability_action_reduce_hp_debts_event] HP debt surpassed its limit, setting to max");
+            new_debt = max_debt_limit;
+        }
+
+        fight_props.set_property(FightPropType::FIGHT_PROP_CUR_HP_DEBTS, new_debt);
+        fight_props.flush_property();
+        if new_debt != cur_debt {
+            reason_events.write(EntityFightPropChangeReasonNotifyEvent {
+                entity_id: target_entity_id.0,
+                prop_type: FightPropType::FIGHT_PROP_CUR_HP_DEBTS,
+                value: new_debt - cur_debt,
+                param_list: None,
+                reason: PropChangeReason::PropChangeAbility,
+                change_reason: {
+                    if new_debt > cur_debt {
+                        ChangeReason::ChangeHpDebtsReason(
+                            ChangeHpDebtsReason::ChangeHpDebtsAddAbility,
+                        )
+                    } else {
+                        ChangeReason::ChangeHpDebtsReason(
+                            ChangeHpDebtsReason::ChangeHpDebtsReduceAbility,
+                        )
+                    }
+                },
+            });
+        }
+        tracing::debug!(target: "ability",
+            "[ability_action_reduce_hp_debts_event] Updated HP debts from {} to {} for entity {}",
+            cur_debt,
+            new_debt,
+            target_entity
+        );
+    }
+}

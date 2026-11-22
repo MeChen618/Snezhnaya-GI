@@ -1,0 +1,14 @@
+[
+  {
+    "comment": "奔行世间（开发卡池）",
+    "gachaType": 200,
+    "scheduleId": 200,
+    "prefabPath": "GachaShowPanel_A022",
+    "previewPrefabPath": "UI_Tab_GachaShowPanel_A022",
+    "titlePath": "UI_GACHA_SHOW_PANEL_A022_TITLE",
+    "costItemId": 224,
+    "sortId": 1000,
+    "rateUpItems4": [],
+    "rateUpItems5": []
+  }
+]

@@ -1,0 +1,98 @@
+use bevy_ecs::prelude::*;
+use snezhnaya_gi_entity::common::{EntityById, InstancedAbilities, ProtocolEntityID};
+use snezhnaya_gi_proto::normal::AbilityMetaReInitOverrideMap;
+
+use crate::util::get_ability_name;
+use snezhnaya_gi_event::ability::*;
+
+pub fn handle_reinit_override_map(
+    index: Res<EntityById>,
+    mut events: MessageReader<ReinitOverrideMapEvent>,
+    mut entities: Query<(&mut InstancedAbilities, &ProtocolEntityID)>,
+) {
+    for ReinitOverrideMapEvent(invoke, version) in events.read() {
+        let entity = match index.0.get(&invoke.entity_id) {
+            Some(e) => *e,
+            None => {
+                tracing::debug!(target: "ability", "[handle_reinit_override_map] Entity {} not found", invoke.entity_id);
+                continue;
+            }
+        };
+
+        let Some(head) = invoke.head else {
+            tracing::debug!(target: "ability", "[handle_reinit_override_map] AbilityInvokeEntry head is missing");
+            continue;
+        };
+
+        let instanced_ability_id = head.instanced_ability_id;
+
+        let Ok((mut instanced_abilities, _)) = entities.get_mut(entity) else {
+            tracing::debug!(target: "ability",
+                "[handle_reinit_override_map] Failed to get entity components for {}",
+                invoke.entity_id
+            );
+            continue;
+        };
+
+        match instanced_abilities.find_by_instanced_ability_id_mut(instanced_ability_id) {
+            None => {
+                tracing::debug!(target: "ability",
+                    "[handle_reinit_override_map] Invalid instanced_ability_id: {} for entity {}",
+                    instanced_ability_id,
+                    invoke.entity_id
+                );
+                continue;
+            }
+            Some((_index, instanced_ability)) => {
+                match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
+                    AbilityMetaReInitOverrideMap,
+                >(
+                    version,
+                    "AbilityMetaReInitOverrideMap",
+                    &invoke.ability_data,
+                ) {
+                    None => {
+                        tracing::debug!(target: "ability",
+                            "[handle_reinit_override_map] Failed to decode AbilityMetaReInitOverrideMap"
+                        );
+                    }
+                    Some(reinit_data) => {
+                        for entry in reinit_data.override_map {
+                            match get_ability_name(entry.key) {
+                                None => {
+                                    tracing::debug!(target: "ability",
+                                        "[handle_reinit_override_map] No key provided for override param"
+                                    );
+                                    continue;
+                                }
+                                Some(key) => {
+                                    let value = entry.float_value;
+
+                                    match instanced_ability.ability_data {
+                                        None => {
+                                            tracing::debug!(target: "ability", "[handle_reinit_override_map] Reinit ability_specials {} = {} None ability on entity {}",
+                                                key,
+                                                value,
+                                                invoke.entity_id
+                                            );
+                                        }
+                                        Some(ability_data) => {
+                                            tracing::debug!(target: "ability", "[handle_reinit_override_map] Reinit ability_specials {} = {} for ability {} on entity {}",
+                                                key,
+                                                value,
+                                                ability_data.ability_name,
+                                                invoke.entity_id
+                                            );
+                                        }
+                                    }
+
+                                    instanced_ability.ability_specials.insert(key, value);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

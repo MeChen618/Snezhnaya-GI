@@ -1,0 +1,40 @@
+[package]
+name = "snezhnaya-gi-game-server"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+# Runtime
+tokio.workspace = true
+
+# Error processing
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Serialization
+serde_json.workspace = true
+serde.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Util
+hex.workspace = true
+byteorder.workspace = true
+dashmap.workspace = true
+rand.workspace = true
+base64-simd.workspace = true
+
+
+# Internal
+common.workspace = true
+game-server-core.workspace = true
+snezhnaya-gi-avatar.workspace = true
+snezhnaya-gi-database.workspace = true
+snezhnaya-gi-message.workspace = true
+snezhnaya-gi-data.workspace = true
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-encryption.workspace = true
+
+# Network
+kcp.workspace = true

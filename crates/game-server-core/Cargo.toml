@@ -1,0 +1,44 @@
+[package]
+name = "game-server-core"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+crossbeam-queue.workspace = true
+tokio.workspace = true
+
+# Logic
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+
+# Error processing
+
+# Logging
+tracing.workspace = true
+
+# Util
+hex.workspace = true
+
+# Internal
+common.workspace = true
+snezhnaya-gi-entity.workspace = true
+snezhnaya-gi-scene.workspace = true
+snezhnaya-gi-avatar.workspace = true
+snezhnaya-gi-banner.workspace = true
+snezhnaya-gi-environment.workspace = true
+snezhnaya-gi-pathfinding.workspace = true
+snezhnaya-gi-combat.workspace = true
+snezhnaya-gi-ability.workspace = true
+snezhnaya-gi-social.workspace = true
+snezhnaya-gi-quest.workspace = true
+snezhnaya-gi-misc.workspace = true
+snezhnaya-gi-command.workspace = true
+snezhnaya-gi-map.workspace = true
+snezhnaya-gi-inventory.workspace = true
+snezhnaya-gi-message.workspace = true
+snezhnaya-gi-persistence.workspace = true
+snezhnaya-gi-luashell.workspace = true
+snezhnaya-gi-data.workspace = true
+snezhnaya-gi-proto.workspace = true
+snezhnaya-gi-event.workspace = true
+snezhnaya-gi-script.workspace = true

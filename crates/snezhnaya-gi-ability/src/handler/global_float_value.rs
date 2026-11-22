@@ -1,0 +1,64 @@
+use bevy_ecs::prelude::*;
+use snezhnaya_gi_entity::common::{EntityById, GlobalAbilityValues};
+use snezhnaya_gi_proto::normal::AbilityScalarValueEntry;
+
+use crate::util::get_ability_name;
+use snezhnaya_gi_event::ability::*;
+
+pub fn handle_global_float_value(
+    index: Res<EntityById>,
+    mut events: MessageReader<GlobalFloatValueEvent>,
+    mut entities: Query<&mut GlobalAbilityValues>,
+) {
+    for GlobalFloatValueEvent(invoke, version) in events.read() {
+        let entity = match index.0.get(&invoke.entity_id) {
+            Some(e) => *e,
+            None => {
+                tracing::debug!(target: "ability", "[handle_global_float_value] Entity {} not found", invoke.entity_id);
+                continue;
+            }
+        };
+
+        let Ok(mut global_ability_values) = entities.get_mut(entity) else {
+            tracing::debug!(target: "ability",
+                "[handle_global_float_value] Failed to get GlobalAbilityValues for entity {}",
+                invoke.entity_id
+            );
+            continue;
+        };
+
+        match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<AbilityScalarValueEntry>(
+            version,
+            "AbilityScalarValueEntry",
+            &invoke.ability_data,
+        ) {
+            None => {
+                tracing::debug!(target: "ability", "[handle_global_float_value] Failed to decode AbilityScalarValueEntry");
+            }
+            Some(entry) => match get_ability_name(entry.key) {
+                None => {
+                    tracing::debug!(target: "ability",
+                        "[handle_global_float_value] No key provided for global float value"
+                    );
+                    continue;
+                }
+                Some(key) => {
+                    if key.as_str().starts_with("SGV_") {
+                        continue;
+                    }
+
+                    let value = entry.float_value;
+
+                    tracing::debug!(target: "ability",
+                        "[handle_global_float_value] Setting global ability value {} = {} for entity {}",
+                        key,
+                        value,
+                        invoke.entity_id
+                    );
+
+                    global_ability_values.0.insert(key, value);
+                }
+            },
+        }
+    }
+}

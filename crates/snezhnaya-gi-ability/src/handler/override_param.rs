@@ -1,0 +1,93 @@
+use bevy_ecs::prelude::*;
+use snezhnaya_gi_entity::common::{EntityById, InstancedAbilities, ProtocolEntityID};
+use snezhnaya_gi_proto::normal::AbilityScalarValueEntry;
+
+use crate::util::get_ability_name;
+use snezhnaya_gi_event::ability::*;
+
+pub fn handle_override_param(
+    index: Res<EntityById>,
+    mut events: MessageReader<OverrideParamEvent>,
+    mut entities: Query<(&mut InstancedAbilities, &ProtocolEntityID)>,
+) {
+    for OverrideParamEvent(invoke, version) in events.read() {
+        let entity = match index.0.get(&invoke.entity_id) {
+            Some(e) => *e,
+            None => {
+                tracing::debug!(target: "ability", "[handle_override_param] Entity {} not found", invoke.entity_id);
+                continue;
+            }
+        };
+
+        let Some(head) = invoke.head else {
+            tracing::debug!(target: "ability", "[handle_override_param] AbilityInvokeEntry head is missing");
+            continue;
+        };
+
+        let instanced_ability_id = head.instanced_ability_id;
+
+        let Ok((mut instanced_abilities, _)) = entities.get_mut(entity) else {
+            tracing::debug!(target: "ability",
+                "[handle_override_param] Failed to get entity components for {}",
+                invoke.entity_id
+            );
+            continue;
+        };
+
+        match instanced_abilities.find_by_instanced_ability_id_mut(instanced_ability_id) {
+            None => {
+                tracing::debug!(target: "ability",
+                    "[handle_override_param] Invalid instanced_ability_id: {} for entity {}",
+                    instanced_ability_id,
+                    invoke.entity_id
+                );
+                continue;
+            }
+            Some((_index, instanced_ability)) => {
+                match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
+                    AbilityScalarValueEntry,
+                >(version, "AbilityScalarValueEntry", &invoke.ability_data)
+                {
+                    None => {
+                        tracing::debug!(target: "ability",
+                            "[handle_override_param] Failed to decode AbilityScalarValueEntry"
+                        );
+                    }
+                    Some(entry) => match get_ability_name(entry.key) {
+                        None => {
+                            tracing::debug!(target: "ability",
+                                "[handle_override_param] No key provided for override param"
+                            );
+                            continue;
+                        }
+                        Some(key) => {
+                            let value = entry.float_value;
+
+                            match instanced_ability.ability_data {
+                                None => {
+                                    tracing::debug!(target: "ability",
+                                        "[handle_override_param] Setting ability_specials {} = {} None ability on entity {}",
+                                        key,
+                                        value,
+                                        invoke.entity_id
+                                    );
+                                }
+                                Some(ability_data) => {
+                                    tracing::debug!(target: "ability",
+                                        "[handle_override_param] Setting ability_specials {} = {} for ability {} on entity {}",
+                                        key,
+                                        value,
+                                        ability_data.ability_name,
+                                        invoke.entity_id
+                                    );
+                                }
+                            }
+
+                            instanced_ability.ability_specials.insert(key, value);
+                        }
+                    },
+                }
+            }
+        }
+    }
+}

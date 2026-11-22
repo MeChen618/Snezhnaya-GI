@@ -1,0 +1,10 @@
+[package]
+name = "snezhnaya-gi-persistence"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+bevy_ecs.workspace = true
+serde.workspace = true
+
+snezhnaya-gi-proto.workspace = true

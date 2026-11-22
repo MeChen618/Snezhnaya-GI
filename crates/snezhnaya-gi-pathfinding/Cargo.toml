@@ -1,0 +1,11 @@
+[package]
+name = "snezhnaya-gi-pathfinding"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+
+snezhnaya-gi-message.workspace = true
+snezhnaya-gi-proto.workspace = true
