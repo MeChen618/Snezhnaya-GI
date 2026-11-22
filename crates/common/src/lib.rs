@@ -11,3 +11,5 @@ pub mod time_util;
 mod toml_util;
 
 pub use toml_util::TomlConfig;
+
+pub const SERVER_DISPLAY_NAME: &str = concat!("SnezhnayaGI ", env!("CARGO_PKG_VERSION"));

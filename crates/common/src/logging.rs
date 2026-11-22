@@ -25,7 +25,7 @@ pub fn set_ability_log(enabled: bool) {
 }
 
 pub fn init() {
-    println!("SnezhnayaGI 7.2.0 | based on renyi89/nod-krai-gi");
+    println!("{}", crate::SERVER_DISPLAY_NAME);
 
     let env_filter = EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
