@@ -41,13 +41,7 @@ python3 scripts/setup_resources.py /path/to/AstaPS-Resource
 bash scripts/start.sh
 ```
 
-第一次运行会生成 `game-server.toml` 和 `dispatch-server.toml`。默认监听：
-
-| 服务 | 默认地址 | 说明 |
-| --- | --- | --- |
-| 账号登录 | 你现有的登录服务 | 本项目不启动 SDK 服务；上游 hoyo-sdk 示例为 `127.0.0.1:21000` |
-| Dispatch | `127.0.0.1:21001` TCP/HTTP | `/query_region_list`、`/query_cur_region`、`/health` |
-| 游戏服 | `127.0.0.1:21002` UDP | KCP 游戏连接 |
+第一次运行会生成 `game-server.toml` 和 `dispatch-server.toml`。
 
 让现有 SDK／客户端的 Dispatch 地址指向本项目的 `http://127.0.0.1:21001`；账号接口仍指向现有登录服务。账号服务和本项目使用独立存储，账号 UID 必须稳定。现有登录服务不会自动共享角色存档。上游游戏服未实现 SDK token 在线校验，请在可信测试网络中使用。
 
