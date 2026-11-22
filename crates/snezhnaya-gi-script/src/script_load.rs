@@ -33,6 +33,7 @@ impl SceneGroupRuntime {
         scene_id: u32,
         block_id: u32,
         group_id: u32,
+        player_uid: u32,
         lua_vm: &mut ResMut<LuaRuntime>,
     ) -> Option<Self> {
         if scene_group_is_bad(group_id) {
@@ -61,6 +62,10 @@ impl SceneGroupRuntime {
         globals.set(script_name.clone(), env.clone()).ok()?;
 
         let data = load_scene_group_from_cache(lua_root, &lua, scene_id, block_id, group_id)?;
+        let initial_suite = data.init_config.suite;
+        if initial_suite == 0 || initial_suite as usize > data.suites.len() {
+            return None;
+        }
 
         if data.triggers.is_empty() {
             let variables = data
@@ -77,10 +82,10 @@ impl SceneGroupRuntime {
                     config_id: 0,
                     source_entity_id: 0,
                     target_entity_id: 0,
-                    uid: 1234,
+                    uid: player_uid,
                 },
                 triggers_by_event: HashMap::new(),
-                active_suites: vec![1],
+                active_suites: vec![initial_suite],
                 active_trigger_names: Vec::new(),
                 variables,
             });
@@ -131,10 +136,10 @@ impl SceneGroupRuntime {
                 config_id: 0,
                 source_entity_id: 0,
                 target_entity_id: 0,
-                uid: 1234,
+                uid: player_uid,
             },
             triggers_by_event,
-            active_suites: vec![1],
+            active_suites: vec![initial_suite],
             active_trigger_names: Vec::new(),
             variables,
         };

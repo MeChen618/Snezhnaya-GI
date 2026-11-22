@@ -2,14 +2,15 @@ use bevy_ecs::change_detection::{Res, ResMut};
 use bevy_ecs::message::{MessageReader, MessageWriter};
 use bevy_ecs::prelude::Commands;
 use common::gm_util::{Command, ItemAction};
+use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use snezhnaya_gi_data::excel::common::ItemType;
 use snezhnaya_gi_data::excel::{
     material_excel_config_collection, reliquary_affix_excel_config_collection,
-    reliquary_excel_config_collection, reliquary_level_excel_config_collection,
-    reliquary_main_prop_excel_config_collection, weapon_excel_config_collection,
-    weapon_level_excel_config_collection, ReliquaryAffixExcelConfig,
+    reliquary_excel_config_collection, reliquary_main_prop_excel_config_collection,
+    weapon_excel_config_collection,
 };
-use snezhnaya_gi_data::prop_type::FightPropType;
 use snezhnaya_gi_data::quest::quest_config::{QuestCond, QuestContent};
 use snezhnaya_gi_entity::common::{EntityCounter, Visible};
 use snezhnaya_gi_entity::gadget::spawn_gadget_entity;
@@ -23,13 +24,7 @@ use snezhnaya_gi_proto::normal::{
     equip, item, scene_gadget_info, Equip, Item, ItemAddHintNotify, ItemHint, Material, Reliquary,
     StoreItemChangeNotify, StoreItemDelNotify, StoreType, TrifleGadgetInfo, Weapon,
 };
-use snezhnaya_gi_proto::server_only::{
-    equip_bin, item_bin, EquipBin, ItemBin, ReliquaryBin, VectorBin, WeaponBin,
-};
-use rand::prelude::IteratorRandom;
-use rand::prelude::SliceRandom;
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use snezhnaya_gi_proto::server_only::{equip_bin, item_bin, VectorBin};
 use std::collections::HashMap;
 
 pub fn item_command_handler(
@@ -73,230 +68,143 @@ pub fn item_command_handler(
 pub fn item_add_handler(
     mut events: MessageReader<ItemAddEvent>,
     mut gm_notify_events: MessageWriter<ConsoleChatNotifyEvent>,
-    mut store_item_change_events: MessageWriter<StoreItemChangeEvent>,
     mut quest_content_events: MessageWriter<QuestContentProgressEvent>,
     mut quest_accept_events: MessageWriter<QuestAcceptCondEvent>,
     mut players: ResMut<Players>,
+    output: Res<MessageOutput>,
 ) {
-    let mut rng = SmallRng::from_entropy();
-
-    let weapon_excel_config_collection_clone =
-        std::sync::Arc::clone(weapon_excel_config_collection::get());
-
-    let reliquary_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_excel_config_collection::get());
-
-    let material_excel_config_collection_clone =
-        std::sync::Arc::clone(material_excel_config_collection::get());
-
-    let reliquary_main_prop_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_main_prop_excel_config_collection::get());
-
-    let reliquary_affix_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_affix_excel_config_collection::get());
-
+    use crate::transaction::{notify_transaction, transact, Amounts};
     for ItemAddEvent(player_uid, item_list) in events.read() {
-        let Some(player_info) = players.get_mut(*player_uid) else {
+        let Some(player) = players.get_mut(*player_uid) else {
             continue;
         };
-
-        let new_guid = player_info.next_guid();
-        let mut change_map: HashMap<u64, i32> = HashMap::new();
-        let Some(ref mut player_item_bin) = player_info.item_bin else {
-            continue;
-        };
-
-        for (item_id, num, level, refinement, main_prop_id, append_prop_id_list) in item_list.iter()
-        {
-            let mut item_type = ItemType::NONE;
-            if weapon_excel_config_collection_clone.contains_key(item_id) {
-                item_type = ItemType::WEAPON;
-            } else if reliquary_excel_config_collection_clone.contains_key(item_id) {
-                item_type = ItemType::RELIQUARY;
-            } else if material_excel_config_collection_clone.contains_key(item_id) {
-                match material_excel_config_collection_clone.get(&item_id) {
-                    None => {}
-                    Some(material_config) => {
-                        item_type = material_config.item_type;
-                    }
-                }
-            } else {
-                gm_notify_events.write(ConsoleChatNotifyEvent(
-                    *player_uid,
-                    format!("unknown id:{}", item_id),
-                ));
+        for (item_id, num, level, refinement, main_prop_id, append_props) in item_list {
+            let count = num.unwrap_or(1);
+            if count == 0 || count > 30000 {
+                continue;
             }
-
-            match item_type {
-                ItemType::NONE => {}
-                ItemType::VIRTUAL => {}
-                ItemType::MATERIAL => {
-                    let Some(material_config) =
-                        material_excel_config_collection_clone.get(&item_id)
-                    else {
-                        continue;
-                    };
-                    if material_config.use_on_gain {
-                        continue;
-                    }
-                    let (material_guid, change_num) = player_item_bin.add_or_update_material(
-                        new_guid,
-                        *item_id,
-                        item_type as u32,
-                        num.unwrap_or(1) as i32,
-                    );
-                    change_map.insert(material_guid, change_num);
+            if let Some(config) = reliquary_excel_config_collection::get().get(item_id) {
+                if main_prop_id.is_some_and(|id| {
+                    !reliquary_main_prop_excel_config_collection::get()
+                        .get(&id)
+                        .is_some_and(|p| p.prop_depot_id == config.main_prop_depot_id)
+                }) || append_props.iter().any(|(id, count)| {
+                    *count > 9
+                        || !reliquary_affix_excel_config_collection::get()
+                            .get(id)
+                            .is_some_and(|p| p.depot_id == config.append_prop_depot_id)
+                }) {
+                    gm_notify_events.write(ConsoleChatNotifyEvent(
+                        *player_uid,
+                        "invalid artifact properties".into(),
+                    ));
+                    continue;
                 }
-                ItemType::RELIQUARY => {
-                    let final_key = match main_prop_id {
-                        Some(id) => id,
-                        None => {
-                            match reliquary_main_prop_excel_config_collection_clone
-                                .keys()
-                                .choose(&mut rng)
-                            {
-                                Some(k) => k,
-                                None => continue,
-                            }
-                        }
-                    };
-
-                    let Some(_reliquary_main_prop_config) =
-                        reliquary_main_prop_excel_config_collection_clone.get(&final_key)
-                    else {
-                        gm_notify_events.write(ConsoleChatNotifyEvent(
-                            *player_uid,
-                            format!("main_prop_id not found:{}", final_key),
-                        ));
-                        continue;
-                    };
-
-                    let Some(reliquary_config) =
-                        reliquary_excel_config_collection_clone.get(item_id)
-                    else {
-                        continue;
-                    };
-
-                    let rank_level = reliquary_config.rank_level;
-                    let level = level.unwrap_or_default().clamp(0, 20) + 1;
-
-                    let mut total_exp: u32 = 0;
-                    let level_config_map =
-                        std::sync::Arc::clone(reliquary_level_excel_config_collection::get());
-                    for lvl in 1..level {
-                        let level_key = (rank_level << 8) + lvl;
-                        if let Some(level_config) = level_config_map.get(&level_key) {
-                            total_exp += level_config.exp;
-                        }
-                    }
-
-                    let main_prop_type = reliquary_main_prop_excel_config_collection_clone
-                        .get(final_key)
-                        .map(|cfg| cfg.prop_type)
-                        .unwrap_or_default();
-
-                    let mut append_prop_id_list = expand_map_to_vec(append_prop_id_list);
-                    if append_prop_id_list.is_empty() {
-                        append_prop_id_list = pick_four_affix_ids(
-                            &reliquary_affix_excel_config_collection_clone,
-                            main_prop_type,
-                            &mut rng,
-                        );
-                    }
-
-                    player_item_bin.add_item(
-                        new_guid,
-                        ItemBin {
-                            item_type: item_type as u32,
-                            item_id: *item_id,
-                            guid: new_guid,
-                            owner_guid: 0,
-                            detail: Some(item_bin::Detail::Equip(EquipBin {
-                                is_locked: false,
-                                detail: Some(equip_bin::Detail::Reliquary(ReliquaryBin {
-                                    main_prop_id: *final_key,
-                                    append_prop_id_list,
-                                    level,
-                                    exp: total_exp,
-                                })),
-                            })),
-                        },
-                    );
-                    change_map.insert(new_guid, 1 as i32);
+            }
+            match transact(
+                player,
+                &Amounts::new(),
+                &Amounts::from([(*item_id, count)]),
+                &[],
+            ) {
+                Err(code) => {
+                    gm_notify_events.write(ConsoleChatNotifyEvent(
+                        *player_uid,
+                        format!("item {} failed: {}", item_id, i32::from(code)),
+                    ));
                 }
-                ItemType::WEAPON => {
-                    let Some(weapon_config) = weapon_excel_config_collection_clone.get(&item_id)
-                    else {
-                        continue;
-                    };
-                    let level = level.unwrap_or(1).clamp(1, 100);
-                    let rank_level = weapon_config.rank_level;
-
-                    let mut total_exp: u32 = 0;
-                    let level_config_map =
-                        std::sync::Arc::clone(weapon_level_excel_config_collection::get());
-                    for lvl in 1..level {
-                        if let Some(level_config) = level_config_map.get(&lvl) {
-                            let rank_index = (rank_level as usize).saturating_sub(1);
-                            if rank_index < level_config.required_exps.len() {
-                                total_exp += level_config.required_exps[rank_index];
+                Ok(change) => {
+                    for guid in &change.added {
+                        let Some(item) = player
+                            .item_bin
+                            .as_mut()
+                            .and_then(|items| items.get_mut_item(guid))
+                        else {
+                            continue;
+                        };
+                        let Some(item_bin::Detail::Equip(equip)) = item.detail.as_mut() else {
+                            continue;
+                        };
+                        match equip.detail.as_mut() {
+                            Some(equip_bin::Detail::Weapon(weapon)) => {
+                                weapon.level = level.unwrap_or(1).clamp(1, 100);
+                                weapon.promote_level = get_min_promote_level(weapon.level);
+                                for value in weapon.affix_map.values_mut() {
+                                    *value = refinement.unwrap_or(1).clamp(1, 5) - 1;
+                                }
                             }
+                            Some(equip_bin::Detail::Reliquary(relic)) => {
+                                let config = &reliquary_excel_config_collection::get()[item_id];
+                                let target_level = level
+                                    .unwrap_or_default()
+                                    .saturating_add(1)
+                                    .clamp(1, config.max_level.max(1));
+                                relic.exp = 0;
+                                if let Some(main) = main_prop_id {
+                                    relic.main_prop_id = *main;
+                                    if append_props.is_empty() {
+                                        let main_type =
+                                            reliquary_main_prop_excel_config_collection::get()
+                                                [main]
+                                                .prop_type;
+                                        let mut types =
+                                            std::collections::HashSet::from([main_type]);
+                                        relic.append_prop_id_list.clear();
+                                        for _ in 0..config.append_prop_num.min(4) {
+                                            let choices: Vec<_> =
+                                                reliquary_affix_excel_config_collection::get()
+                                                    .values()
+                                                    .filter(|p| {
+                                                        p.depot_id == config.append_prop_depot_id
+                                                            && p.weight > 0
+                                                            && !types.contains(&p.prop_type)
+                                                    })
+                                                    .collect();
+                                            if let Ok(prop) = choices
+                                                .choose_weighted(&mut rand::thread_rng(), |p| {
+                                                    p.weight
+                                                })
+                                            {
+                                                relic.append_prop_id_list.push(prop.id);
+                                                types.insert(prop.prop_type);
+                                            }
+                                        }
+                                    }
+                                }
+                                if !append_props.is_empty() {
+                                    relic.append_prop_id_list = expand_map_to_vec(append_props);
+                                    relic.level = target_level;
+                                } else if crate::equip::set_relic_level(relic, config, target_level)
+                                    .is_err()
+                                {
+                                    gm_notify_events.write(ConsoleChatNotifyEvent(
+                                        *player_uid,
+                                        "artifact level config is invalid".into(),
+                                    ));
+                                }
+                            }
+                            _ => (),
                         }
                     }
-
-                    let mut affix_map = HashMap::new();
-                    weapon_config.skill_affix.iter().for_each(|affix| {
-                        affix_map.insert(*affix, refinement.unwrap_or_default().clamp(1, 5) - 1);
+                    notify_transaction(&output, player, &change);
+                    for content_type in [QuestContent::ObtainItem, QuestContent::ObtainVariousItem]
+                    {
+                        quest_content_events.write(QuestContentProgressEvent {
+                            player_uid: *player_uid,
+                            content_type,
+                            param: *item_id,
+                            param2: 0,
+                            param3: 0,
+                            add_progress: count,
+                        });
+                    }
+                    quest_accept_events.write(QuestAcceptCondEvent {
+                        player_uid: *player_uid,
+                        cond_type: QuestCond::PackHaveItem,
+                        param: *item_id,
                     });
-                    player_item_bin.add_item(
-                        new_guid,
-                        ItemBin {
-                            item_type: item_type as u32,
-                            item_id: *item_id,
-                            guid: new_guid,
-                            owner_guid: 0,
-                            detail: Some(item_bin::Detail::Equip(EquipBin {
-                                is_locked: false,
-                                detail: Some(equip_bin::Detail::Weapon(WeaponBin {
-                                    level,
-                                    promote_level: get_min_promote_level(level),
-                                    affix_map,
-                                    exp: total_exp,
-                                })),
-                            })),
-                        },
-                    );
-                    change_map.insert(new_guid, 1 as i32);
                 }
-                ItemType::DISPLAY => {}
-                ItemType::FURNITURE => {}
             }
-        }
-
-        store_item_change_events.write(StoreItemChangeEvent(*player_uid, change_map));
-
-        for (item_id, _, _, _, _, _) in item_list.iter() {
-            quest_content_events.write(QuestContentProgressEvent {
-                player_uid: *player_uid,
-                content_type: QuestContent::ObtainItem,
-                param: *item_id,
-                param2: 0,
-                param3: 0,
-                add_progress: 1,
-            });
-            quest_content_events.write(QuestContentProgressEvent {
-                player_uid: *player_uid,
-                content_type: QuestContent::ObtainVariousItem,
-                param: *item_id,
-                param2: 0,
-                param3: 0,
-                add_progress: 1,
-            });
-            quest_accept_events.write(QuestAcceptCondEvent {
-                player_uid: *player_uid,
-                cond_type: QuestCond::PackHaveItem,
-                param: *item_id,
-            });
         }
     }
 }
@@ -591,73 +499,6 @@ pub fn get_max_level_by_promote_level(promote_level: u32) -> u32 {
     } else {
         return 100;
     }
-}
-
-pub fn pick_four_affix_ids(
-    map: &std::sync::Arc<HashMap<u32, ReliquaryAffixExcelConfig>>,
-    main_prop_type: FightPropType,
-    rng: &mut SmallRng,
-) -> Vec<u32> {
-    // 1. 按 prop_type 分桶
-    let mut buckets: HashMap<FightPropType, Vec<u32>> = HashMap::new();
-
-    for (id, cfg) in map.iter() {
-        if cfg.prop_type != main_prop_type {
-            buckets.entry(cfg.prop_type).or_default().push(*id);
-        }
-    }
-
-    // 2. 每个 prop_type 等概率：先随机从每个桶中抽 1 个
-    let mut picked_per_type: Vec<u32> = Vec::new();
-    for (_pt, ids) in buckets.into_iter() {
-        if let Some(chosen) = ids.choose(rng) {
-            picked_per_type.push(*chosen);
-        }
-    }
-
-    // 3. 从所有 prop_type 中随机抽 4 个
-    picked_per_type.choose_multiple(rng, 4).cloned().collect()
-}
-
-pub fn pick_new_affix_id(
-    main_prop_type: FightPropType,
-    mut prop_type_list: Vec<FightPropType>,
-) -> u32 {
-    let reliquary_affix_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_affix_excel_config_collection::get());
-    let mut rng = SmallRng::from_entropy();
-    // 1. 收集所有 prop_type → ids
-    let mut buckets: HashMap<FightPropType, Vec<u32>> = HashMap::new();
-    for (id, cfg) in reliquary_affix_excel_config_collection_clone.iter() {
-        if cfg.prop_type != main_prop_type {
-            buckets.entry(cfg.prop_type).or_default().push(*id);
-        }
-    }
-
-    // 2. 如果 prop_type_list < 4，则补齐
-    if prop_type_list.len() < 4 {
-        // 所有可选 prop_type
-        let mut all_types: Vec<FightPropType> = buckets.keys().cloned().collect();
-
-        // 去掉已有的
-        all_types.retain(|pt| !prop_type_list.contains(pt));
-
-        // 随机补齐到 5
-        let need = 4 - prop_type_list.len();
-        let extra = all_types
-            .choose_multiple(&mut rng, need)
-            .cloned()
-            .collect::<Vec<_>>();
-
-        prop_type_list.extend(extra);
-    }
-
-    // 3. 从最终的 prop_type_list 中随机选一个 prop_type
-    let chosen_pt = prop_type_list.choose(&mut rng).cloned().unwrap();
-
-    // 4. 在该 prop_type 的桶中随机选一个 affix id
-    let ids = buckets.get(&chosen_pt).expect("prop_type must exist");
-    *ids.choose(&mut rng).unwrap()
 }
 
 pub fn random_offset_vec3((x, y, z): (f32, f32, f32), rng: &mut SmallRng) -> (f32, f32, f32) {

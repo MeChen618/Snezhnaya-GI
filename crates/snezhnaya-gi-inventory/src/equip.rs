@@ -1,4 +1,3 @@
-use crate::item::pick_new_affix_id;
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::excel::common::{EquipType, ItemType};
 use snezhnaya_gi_data::excel::{
@@ -6,9 +5,7 @@ use snezhnaya_gi_data::excel::{
     reliquary_level_excel_config_collection, reliquary_main_prop_excel_config_collection,
     weapon_excel_config_collection, weapon_level_excel_config_collection,
 };
-use snezhnaya_gi_data::prop_type::FightPropType;
 use snezhnaya_gi_event::avatar::AvatarEquipChangeEvent;
-use snezhnaya_gi_event::inventory::StoreItemChangeEvent;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::{
@@ -16,15 +13,14 @@ use snezhnaya_gi_proto::normal::{
     WeaponUpgradeRsp, WearEquipReq, WearEquipRsp,
 };
 use snezhnaya_gi_proto::retcode::Retcode;
-use snezhnaya_gi_proto::server_only::{equip_bin, item_bin, PlayerItemCompBin};
-use std::collections::{HashMap, HashSet};
-use tracing::{debug, instrument, warn};
+use snezhnaya_gi_proto::server_only::{equip_bin, item_bin};
+use std::collections::HashSet;
+use tracing::{debug, instrument};
 
 #[instrument(skip_all)]
 pub fn change_avatar_equip(
     mut events: MessageReader<ClientMessageEvent>,
     mut equip_change_events: MessageWriter<AvatarEquipChangeEvent>,
-    mut store_item_change_events: MessageWriter<StoreItemChangeEvent>,
     mut players: ResMut<Players>,
     message_output: Res<MessageOutput>,
 ) {
@@ -84,12 +80,15 @@ pub fn change_avatar_equip(
 
                     if wear_equip_type != EquipType::None {
                         if wear_item_bin.owner_guid == request.avatar_guid {
-                            warn!(
-                                "wear_item_bin.owner_guid == request.avatar_guid:{}",
-                                request.avatar_guid
+                            message_output.send(
+                                message.sender_uid(),
+                                "WearEquipRsp",
+                                WearEquipRsp {
+                                    avatar_guid: request.avatar_guid,
+                                    equip_guid: request.equip_guid,
+                                    retcode: 0,
+                                },
                             );
-                            wear_item_bin.owner_guid = 0;
-                            player_item_bin.add_item(wear_item_bin.guid, wear_item_bin.clone());
                             continue;
                         }
 
@@ -234,370 +233,42 @@ pub fn change_avatar_equip(
             }
             "ReliquaryUpgradeReq" => {
                 if let Some(request) = message.decode::<ReliquaryUpgradeReq>() {
-                    let Some(player_info) = players.get_mut(message.sender_uid()) else {
+                    let Some(player) = players.get_mut(message.sender_uid()) else {
                         continue;
                     };
-
-                    let Some(ref mut player_item_bin) = player_info.item_bin else {
-                        continue;
-                    };
-
-                    let Some(target_item) = player_item_bin
-                        .get_item(&request.target_reliquary_guid)
-                        .cloned()
-                    else {
-                        debug!(
-                            "reliquary with guid {} doesn't exist",
-                            request.target_reliquary_guid
-                        );
-                        continue;
-                    };
-
-                    let Some(item_bin::Detail::Equip(ref target_equip)) = target_item.detail else {
-                        debug!("item is not equip");
-                        continue;
-                    };
-
-                    let Some(equip_bin::Detail::Reliquary(ref target_reliquary)) =
-                        target_equip.detail
-                    else {
-                        debug!("item is not reliquary");
-                        continue;
-                    };
-
-                    let old_level = target_reliquary.level;
-                    let old_append_prop_list = target_reliquary.append_prop_id_list.clone();
-
-                    let reliquary_config_map =
-                        std::sync::Arc::clone(reliquary_excel_config_collection::get());
-                    let Some(reliquary_config) = reliquary_config_map.get(&target_item.item_id)
-                    else {
-                        debug!("reliquary config {} doesn't exist", target_item.item_id);
-                        continue;
-                    };
-
-                    let rank_level = reliquary_config.rank_level;
-                    let add_prop_levels = &reliquary_config.add_prop_levels;
-                    let max_level = reliquary_config.max_level;
-
-                    let mut total_exp: u32 = 0;
-                    let mut change_map: HashMap<u64, i32> = HashMap::new();
-
-                    for food_guid in &request.food_reliquary_guid_list {
-                        if let Some(food_item) = player_item_bin.get_item(food_guid) {
-                            if let Some(item_bin::Detail::Equip(ref food_equip)) = food_item.detail
-                            {
-                                if let Some(equip_bin::Detail::Reliquary(ref food_reliquary)) =
-                                    food_equip.detail
-                                {
-                                    let food_config_map = std::sync::Arc::clone(
-                                        reliquary_excel_config_collection::get(),
-                                    );
-                                    if let Some(food_config) =
-                                        food_config_map.get(&food_item.item_id)
-                                    {
-                                        let food_total_exp = get_reliquary_total_exp(
-                                            food_reliquary.level,
-                                            food_reliquary.exp,
-                                            food_config.rank_level,
-                                        );
-                                        let discounted_exp =
-                                            (food_total_exp as f32 * 0.8).ceil() as u32;
-                                        total_exp += food_config.base_conv_exp + discounted_exp;
-                                    }
-                                }
+                    let response =
+                        upgrade_relic(player, &request, &message_output).unwrap_or_else(|code| {
+                            ReliquaryUpgradeRsp {
+                                retcode: code.into(),
+                                target_reliquary_guid: request.target_reliquary_guid,
+                                ..Default::default()
                             }
-                        }
-                        player_item_bin.remove_item(food_guid);
-                        change_map.insert(*food_guid, -1);
+                        });
+                    if response.retcode == 0 {
+                        equip_updated(
+                            player,
+                            request.target_reliquary_guid,
+                            &mut equip_change_events,
+                        );
                     }
-
-                    for item_param in &request.item_param_list {
-                        let mut ra = 1000000;
-                        if item_param.item_id == 105002 {
-                            ra = 2500;
-                        }
-                        if item_param.item_id == 105003 {
-                            ra = 10000;
-                        }
-                        total_exp += item_param.count * ra;
-                        let consumed =
-                            consume_material(player_item_bin, item_param.item_id, item_param.count);
-                        for (guid, delta) in consumed {
-                            *change_map.entry(guid).or_insert(0) += delta;
-                        }
-                    }
-
-                    let Some(ref mut item) =
-                        player_item_bin.get_mut_item(&request.target_reliquary_guid)
-                    else {
-                        continue;
-                    };
-
-                    let Some(item_bin::Detail::Equip(ref mut equip)) = item.detail else {
-                        continue;
-                    };
-
-                    let Some(equip_bin::Detail::Reliquary(ref mut reliquary)) = equip.detail else {
-                        continue;
-                    };
-
-                    let level_config_map =
-                        std::sync::Arc::clone(reliquary_level_excel_config_collection::get());
-
-                    debug!("reliquary.exp += {}", total_exp);
-                    reliquary.exp += total_exp;
-
-                    let mut prop_type_set: HashSet<FightPropType> = HashSet::new();
-
-                    while reliquary.level < max_level {
-                        let level_key = (rank_level << 8) + reliquary.level;
-                        let Some(level_config) = level_config_map.get(&level_key) else {
-                            break;
-                        };
-
-                        if reliquary.exp < level_config.exp {
-                            break;
-                        }
-
-                        reliquary.exp -= level_config.exp;
-
-                        if add_prop_levels.contains(&(reliquary.level + 1)) {
-                            let main_prop_type = get_main_prop_type(reliquary.main_prop_id);
-                            prop_type_set.insert(main_prop_type);
-                            let append_prop_type_list: Vec<FightPropType> = reliquary
-                                .append_prop_id_list
-                                .iter()
-                                .map(|append_prop_id| get_append_prop_type(*append_prop_id))
-                                .collect();
-
-                            let new_affix_id =
-                                pick_new_affix_id(main_prop_type, append_prop_type_list);
-                            reliquary.append_prop_id_list.push(new_affix_id);
-                        }
-
-                        reliquary.level += 1;
-                    }
-
-                    if reliquary.level >= max_level {
-                        reliquary.exp = 0;
-                    }
-
-                    change_map.insert(request.target_reliquary_guid, 0);
-
-                    message_output.send(
-                        message.sender_uid(),
-                        "ReliquaryUpgradeRsp",
-                        ReliquaryUpgradeRsp {
-                            retcode: Retcode::RetSucc.into(),
-                            target_reliquary_guid: request.target_reliquary_guid,
-                            old_level,
-                            cur_level: reliquary.level,
-                            power_up_rate: 0,
-                            old_append_prop_list,
-                            cur_append_prop_list: reliquary.append_prop_id_list.clone(),
-                        },
-                    );
-
-                    store_item_change_events
-                        .write(StoreItemChangeEvent(message.sender_uid(), change_map));
-
-                    if target_item.owner_guid != 0 {
-                        let Some(ref mut player_avatar_bin) = player_info.avatar_bin else {
-                            continue;
-                        };
-
-                        let Some(avatar_bin) = player_avatar_bin
-                            .avatar_map
-                            .get_mut(&target_item.owner_guid)
-                        else {
-                            debug!("avatar with guid {} doesn't exist", target_item.owner_guid);
-                            continue;
-                        };
-
-                        let reliquary_excel_config_collection_clone =
-                            std::sync::Arc::clone(reliquary_excel_config_collection::get());
-
-                        let equip_type = match reliquary_excel_config_collection_clone
-                            .get(&target_item.item_id)
-                        {
-                            Some(config) => config.equip_type,
-                            None => continue,
-                        };
-
-                        if equip_type != EquipType::None {
-                            avatar_bin.equip_map.insert(equip_type as u32, item.clone());
-                            equip_change_events.write(AvatarEquipChangeEvent {
-                                player_uid: message.sender_uid(),
-                                avatar_guid: target_item.owner_guid,
-                                equip_type,
-                            });
-                        }
-                    }
+                    message_output.send(message.sender_uid(), "ReliquaryUpgradeRsp", response);
                 }
             }
             "WeaponUpgradeReq" => {
                 if let Some(request) = message.decode::<WeaponUpgradeReq>() {
-                    let Some(player_info) = players.get_mut(message.sender_uid()) else {
+                    let Some(player) = players.get_mut(message.sender_uid()) else {
                         continue;
                     };
-
-                    let Some(ref mut player_item_bin) = player_info.item_bin else {
-                        continue;
-                    };
-
-                    let Some(target_item) = player_item_bin
-                        .get_item(&request.target_weapon_guid)
-                        .cloned()
-                    else {
-                        debug!(
-                            "weapon with guid {} doesn't exist",
-                            request.target_weapon_guid
-                        );
-                        continue;
-                    };
-
-                    let Some(item_bin::Detail::Equip(ref target_equip)) = target_item.detail else {
-                        debug!("item is not equip");
-                        continue;
-                    };
-
-                    let Some(equip_bin::Detail::Weapon(ref target_weapon)) = target_equip.detail
-                    else {
-                        debug!("item is not weapon");
-                        continue;
-                    };
-
-                    let old_level = target_weapon.level;
-
-                    let weapon_config_map =
-                        std::sync::Arc::clone(weapon_excel_config_collection::get());
-                    let Some(target_weapon_config) = weapon_config_map.get(&target_item.item_id)
-                    else {
-                        debug!("weapon config {} doesn't exist", target_item.item_id);
-                        continue;
-                    };
-
-                    let rank_level = target_weapon_config.rank_level;
-
-                    let mut total_exp: u32 = 0;
-                    let mut change_map: HashMap<u64, i32> = HashMap::new();
-
-                    for food_guid in &request.food_weapon_guid_list {
-                        if let Some(food_item) = player_item_bin.get_item(food_guid) {
-                            if let Some(item_bin::Detail::Equip(ref food_equip)) = food_item.detail
-                            {
-                                if let Some(equip_bin::Detail::Weapon(ref food_weapon)) =
-                                    food_equip.detail
-                                {
-                                    if let Some(food_config) =
-                                        weapon_config_map.get(&food_item.item_id)
-                                    {
-                                        let food_total_exp = get_weapon_total_exp(
-                                            food_config.weapon_base_exp,
-                                            food_weapon.level,
-                                            food_weapon.exp,
-                                            food_config.rank_level,
-                                        );
-                                        total_exp += food_total_exp;
-                                    }
-                                }
-                            }
-                        }
-                        player_item_bin.remove_item(food_guid);
-                        change_map.insert(*food_guid, -1);
-                    }
-
-                    for item_param in &request.item_param_list {
-                        let mut ra = 1000000;
-                        if item_param.item_id == 104011 {
-                            ra = 400;
-                        }
-                        if item_param.item_id == 104012 {
-                            ra = 2000;
-                        }
-                        if item_param.item_id == 104013 {
-                            ra = 10000;
-                        }
-                        total_exp += item_param.count * ra;
-                        let consumed =
-                            consume_material(player_item_bin, item_param.item_id, item_param.count);
-                        for (guid, delta) in consumed {
-                            *change_map.entry(guid).or_insert(0) += delta;
-                        }
-                    }
-
-                    let Some(ref mut item) =
-                        player_item_bin.get_mut_item(&request.target_weapon_guid)
-                    else {
-                        continue;
-                    };
-
-                    let Some(item_bin::Detail::Equip(ref mut equip)) = item.detail else {
-                        continue;
-                    };
-
-                    let Some(equip_bin::Detail::Weapon(ref mut weapon)) = equip.detail else {
-                        continue;
-                    };
-
-                    debug!("weapon.exp += {}", total_exp);
-                    weapon.exp += total_exp;
-                    let max_level =
-                        crate::item::get_max_level_by_promote_level(weapon.promote_level);
-
-                    while weapon.level < max_level {
-                        let exp_needed = get_weapon_exp_for_level(weapon.level, rank_level);
-                        if exp_needed == 0 || weapon.exp < exp_needed {
-                            break;
-                        }
-                        weapon.exp -= exp_needed;
-                        weapon.level += 1;
-                    }
-
-                    if weapon.level >= max_level {
-                        weapon.exp = 0;
-                    }
-
-                    change_map.insert(request.target_weapon_guid, 0);
-
-                    message_output.send(
-                        message.sender_uid(),
-                        "WeaponUpgradeRsp",
-                        WeaponUpgradeRsp {
-                            retcode: Retcode::RetSucc.into(),
+                    let response = upgrade_weapon(player, &request, &message_output)
+                        .unwrap_or_else(|code| WeaponUpgradeRsp {
+                            retcode: code.into(),
                             target_weapon_guid: request.target_weapon_guid,
-                            old_level,
-                            cur_level: weapon.level,
-                            item_param_list: vec![],
-                        },
-                    );
-
-                    store_item_change_events
-                        .write(StoreItemChangeEvent(message.sender_uid(), change_map));
-
-                    if target_item.owner_guid != 0 {
-                        let Some(ref mut player_avatar_bin) = player_info.avatar_bin else {
-                            continue;
-                        };
-
-                        let Some(avatar_bin) = player_avatar_bin
-                            .avatar_map
-                            .get_mut(&target_item.owner_guid)
-                        else {
-                            debug!("avatar with guid {} doesn't exist", target_item.owner_guid);
-                            continue;
-                        };
-
-                        avatar_bin
-                            .equip_map
-                            .insert(EquipType::Weapon as u32, item.clone());
-                        equip_change_events.write(AvatarEquipChangeEvent {
-                            player_uid: message.sender_uid(),
-                            avatar_guid: target_item.owner_guid,
-                            equip_type: EquipType::Weapon,
+                            ..Default::default()
                         });
+                    if response.retcode == 0 {
+                        equip_updated(player, request.target_weapon_guid, &mut equip_change_events);
                     }
+                    message_output.send(message.sender_uid(), "WeaponUpgradeRsp", response);
                 }
             }
             &_ => {}
@@ -605,112 +276,376 @@ pub fn change_avatar_equip(
     }
 }
 
-fn consume_material(
-    item_bin: &mut PlayerItemCompBin,
-    item_id: u32,
-    count: u32,
-) -> HashMap<u64, i32> {
-    let mut change_map: HashMap<u64, i32> = HashMap::new();
-    let mut remaining = count;
-    let mut to_remove = Vec::new();
-    let mut partial_guid = None;
+fn upgrade_inputs(
+    player: &snezhnaya_gi_proto::server_only::PlayerDataBin,
+    target: u64,
+    foods: &[u64],
+    materials: &[snezhnaya_gi_proto::normal::ItemParam],
+    relic: bool,
+) -> crate::transaction::InventoryResult<(crate::transaction::Amounts, u32)> {
+    use crate::transaction::*;
+    use snezhnaya_gi_data::excel::{material_excel_config_collection, ItemUseOp};
+    if foods.len() > 1000 || materials.len() > 100 || foods.contains(&target) {
+        return Err(Retcode::RetItemInvalidUseCount);
+    }
+    let items = player.item_bin.as_ref().ok_or(Retcode::RetItemNotExist)?;
+    if items
+        .reliquary_transmuter
+        .as_ref()
+        .and_then(|s| s.pending_reforge.as_ref())
+        .is_some_and(|p| p.guid == target)
+    {
+        return Err(Retcode::RetEquipIsLocked);
+    }
+    let mut seen = HashSet::new();
+    let mut total = 0u64;
+    let mut taxable = 0u64;
+    for guid in foods {
+        if !seen.insert(*guid) {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        let item = items.get_item(guid).ok_or(Retcode::RetItemNotExist)?;
+        if item.owner_guid != 0 {
+            return Err(Retcode::RetEquipHasBeenWeared);
+        }
+        let Some(item_bin::Detail::Equip(equip)) = item.detail.as_ref() else {
+            return Err(Retcode::RetItemInvalidTarget);
+        };
+        if equip.is_locked {
+            return Err(Retcode::RetEquipIsLocked);
+        }
+        let (base, exp) = match equip.detail.as_ref() {
+            Some(equip_bin::Detail::Reliquary(food)) if relic => {
+                let config = reliquary_excel_config_collection::get()
+                    .get(&item.item_id)
+                    .ok_or(Retcode::RetNotFoundConfig)?;
+                if food.level == 0 || food.level > config.max_level {
+                    return Err(Retcode::RetItemInvalidTarget);
+                }
+                let mut exp = food.exp as u64;
+                for level in 1..food.level {
+                    exp += reliquary_level_excel_config_collection::get()
+                        .get(&((config.rank_level << 8) + level))
+                        .ok_or(Retcode::RetNotFoundConfig)?
+                        .exp as u64;
+                }
+                (config.base_conv_exp as u64, exp)
+            }
+            Some(equip_bin::Detail::Weapon(food)) if !relic => {
+                let config = weapon_excel_config_collection::get()
+                    .get(&item.item_id)
+                    .ok_or(Retcode::RetNotFoundConfig)?;
+                if food.level == 0 || food.level > 100 {
+                    return Err(Retcode::RetItemInvalidTarget);
+                }
+                let mut exp = food.exp as u64;
+                for level in 1..food.level {
+                    exp += weapon_exp(level, config.rank_level)? as u64;
+                }
+                (config.weapon_base_exp as u64, exp)
+            }
+            _ => return Err(Retcode::RetItemInvalidTarget),
+        };
+        total += base + exp * 4 / 5;
+        taxable += base;
+    }
+    let mut costs = Amounts::new();
+    for material in materials {
+        if material.count == 0 {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        let row = material_excel_config_collection::get()
+            .get(&material.item_id)
+            .ok_or(Retcode::RetNotFoundConfig)?;
+        let exp = row
+            .item_use
+            .iter()
+            .find(|op| {
+                matches!(
+                    (relic, op.use_op),
+                    (true, ItemUseOp::AddReliquaryExp) | (false, ItemUseOp::AddWeaponExp)
+                )
+            })
+            .and_then(|op| op.use_param.first())
+            .and_then(|p| p.as_str().parse::<u32>().ok())
+            .filter(|v| *v > 0)
+            .ok_or(Retcode::RetItemInvalidTarget)?;
+        add_amount(&mut costs, material.item_id, material.count)?;
+        let amount = exp as u64 * material.count as u64;
+        total += amount;
+        taxable += amount;
+    }
+    if total == 0 || total > u32::MAX as u64 {
+        return Err(Retcode::RetItemInvalidUseCount);
+    }
+    let coin = if relic { taxable } else { taxable / 10 };
+    add_amount(
+        &mut costs,
+        202,
+        u32::try_from(coin).map_err(|_| Retcode::RetItemExceedLimit)?,
+    )?;
+    Ok((costs, total as u32))
+}
 
-    for (&guid, item) in item_bin.iter() {
-        if remaining == 0 {
+fn weapon_exp(level: u32, rank: u32) -> crate::transaction::InventoryResult<u32> {
+    weapon_level_excel_config_collection::get()
+        .get(&level)
+        .and_then(|row| row.required_exps.get(rank.checked_sub(1)? as usize))
+        .copied()
+        .filter(|v| *v > 0)
+        .ok_or(Retcode::RetNotFoundConfig)
+}
+
+fn commit_target(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    item: snezhnaya_gi_proto::server_only::ItemBin,
+    slot: EquipType,
+    change: &mut crate::transaction::InventoryChange,
+) {
+    player
+        .item_bin
+        .as_mut()
+        .unwrap()
+        .add_item(item.guid, item.clone());
+    change.changed.push(item.guid);
+    if let Some(avatar) = player
+        .avatar_bin
+        .as_mut()
+        .and_then(|a| a.avatar_map.get_mut(&item.owner_guid))
+    {
+        avatar.equip_map.insert(slot as u32, item);
+    }
+}
+
+fn upgrade_weapon(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    request: &WeaponUpgradeReq,
+    output: &MessageOutput,
+) -> crate::transaction::InventoryResult<WeaponUpgradeRsp> {
+    use crate::transaction::*;
+    let (costs, exp) = upgrade_inputs(
+        player,
+        request.target_weapon_guid,
+        &request.food_weapon_guid_list,
+        &request.item_param_list,
+        false,
+    )?;
+    let mut target = player
+        .item_bin
+        .as_ref()
+        .and_then(|i| i.get_item(&request.target_weapon_guid))
+        .cloned()
+        .ok_or(Retcode::RetItemNotExist)?;
+    let row = weapon_excel_config_collection::get()
+        .get(&target.item_id)
+        .ok_or(Retcode::RetItemInvalidTarget)?;
+    let Some(item_bin::Detail::Equip(equip)) = target.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let Some(equip_bin::Detail::Weapon(weapon)) = equip.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let old_level = weapon.level;
+    let max = crate::item::get_max_level_by_promote_level(weapon.promote_level);
+    if weapon.level == 0 || weapon.level >= max {
+        return Err(Retcode::RetEquipLevelHigher);
+    }
+    let mut total = weapon.exp as u64 + exp as u64;
+    while weapon.level < max {
+        let required = weapon_exp(weapon.level, row.rank_level)? as u64;
+        if total < required {
             break;
         }
-        if item.item_id != item_id {
-            continue;
-        }
-        if let Some(item_bin::Detail::Material(ref mat)) = item.detail {
-            if mat.count <= remaining {
-                remaining -= mat.count;
-                to_remove.push(guid);
-                change_map.insert(guid, -(mat.count as i32));
-            } else {
-                partial_guid = Some((guid, mat.count - remaining));
-                change_map.insert(guid, -(remaining as i32));
-                remaining = 0;
-            }
-        }
+        total -= required;
+        weapon.level += 1;
     }
-
-    if let Some((guid, new_count)) = partial_guid {
-        if let Some(ref mut mat_item) = item_bin.get_mut_item(&guid) {
-            if let Some(item_bin::Detail::Material(ref mut m)) = mat_item.detail {
-                m.count = new_count;
-            }
-        }
-    }
-
-    for guid in to_remove {
-        item_bin.remove_item(&guid);
-    }
-
-    change_map
+    weapon.exp = if weapon.level >= max {
+        0
+    } else {
+        u32::try_from(total).map_err(|_| Retcode::RetItemExceedLimit)?
+    };
+    let response = WeaponUpgradeRsp {
+        old_level,
+        cur_level: weapon.level,
+        target_weapon_guid: request.target_weapon_guid,
+        ..Default::default()
+    };
+    let mut change = transact(
+        player,
+        &costs,
+        &Amounts::new(),
+        &request.food_weapon_guid_list,
+    )?;
+    commit_target(player, target, EquipType::Weapon, &mut change);
+    notify_transaction(output, player, &change);
+    Ok(response)
 }
 
-fn get_main_prop_type(main_prop_id: u32) -> FightPropType {
-    let reliquary_main_prop_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_main_prop_excel_config_collection::get());
-    reliquary_main_prop_excel_config_collection_clone
-        .get(&main_prop_id)
-        .map(|cfg| cfg.prop_type)
-        .unwrap_or_default()
-}
-
-fn get_append_prop_type(append_prop_id: u32) -> FightPropType {
-    let reliquary_affix_excel_config_collection_clone =
-        std::sync::Arc::clone(reliquary_affix_excel_config_collection::get());
-    reliquary_affix_excel_config_collection_clone
-        .get(&append_prop_id)
-        .map(|cfg| cfg.prop_type)
-        .unwrap_or_default()
-}
-
-fn get_weapon_exp_for_level(level: u32, rank_level: u32) -> u32 {
-    let level_config_map = std::sync::Arc::clone(weapon_level_excel_config_collection::get());
-    if let Some(level_config) = level_config_map.get(&level) {
-        let rank_index = (rank_level as usize).saturating_sub(1);
-        if rank_index < level_config.required_exps.len() {
-            return level_config.required_exps[rank_index];
-        }
+fn upgrade_relic(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    request: &ReliquaryUpgradeReq,
+    output: &MessageOutput,
+) -> crate::transaction::InventoryResult<ReliquaryUpgradeRsp> {
+    use crate::transaction::*;
+    let (costs, exp) = upgrade_inputs(
+        player,
+        request.target_reliquary_guid,
+        &request.food_reliquary_guid_list,
+        &request.item_param_list,
+        true,
+    )?;
+    let mut target = player
+        .item_bin
+        .as_ref()
+        .and_then(|i| i.get_item(&request.target_reliquary_guid))
+        .cloned()
+        .ok_or(Retcode::RetItemNotExist)?;
+    let row = reliquary_excel_config_collection::get()
+        .get(&target.item_id)
+        .ok_or(Retcode::RetItemInvalidTarget)?;
+    let Some(item_bin::Detail::Equip(equip)) = target.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    let Some(equip_bin::Detail::Reliquary(relic)) = equip.detail.as_mut() else {
+        return Err(Retcode::RetItemInvalidTarget);
+    };
+    if relic.level == 0 || relic.level >= row.max_level {
+        return Err(Retcode::RetEquipLevelHigher);
     }
-    0
+    let old_level = relic.level;
+    let old_append_prop_list = relic.append_prop_id_list.clone();
+    advance_relic(relic, row, exp)?;
+    let response = ReliquaryUpgradeRsp {
+        old_level,
+        old_append_prop_list,
+        cur_level: relic.level,
+        cur_append_prop_list: relic.append_prop_id_list.clone(),
+        power_up_rate: 1,
+        target_reliquary_guid: request.target_reliquary_guid,
+        ..Default::default()
+    };
+    let mut change = transact(
+        player,
+        &costs,
+        &Amounts::new(),
+        &request.food_reliquary_guid_list,
+    )?;
+    commit_target(player, target, row.equip_type, &mut change);
+    notify_transaction(output, player, &change);
+    Ok(response)
 }
 
-fn get_weapon_total_exp(
-    weapon_base_exp: u32,
+fn equip_updated(
+    player: &snezhnaya_gi_proto::server_only::PlayerDataBin,
+    guid: u64,
+    events: &mut MessageWriter<AvatarEquipChangeEvent>,
+) {
+    if let Some(item) = player
+        .item_bin
+        .as_ref()
+        .and_then(|i| i.get_item(&guid))
+        .filter(|i| i.owner_guid != 0)
+    {
+        let slot = if item.item_type == ItemType::WEAPON as u32 {
+            EquipType::Weapon
+        } else {
+            reliquary_excel_config_collection::get()
+                .get(&item.item_id)
+                .map_or(EquipType::None, |r| r.equip_type)
+        };
+        events.write(AvatarEquipChangeEvent {
+            player_uid: player.uid,
+            avatar_guid: item.owner_guid,
+            equip_type: slot,
+        });
+    }
+}
+
+pub(crate) fn set_relic_level(
+    relic: &mut snezhnaya_gi_proto::server_only::ReliquaryBin,
+    row: &snezhnaya_gi_data::excel::ReliquaryExcelConfig,
     level: u32,
-    current_exp: u32,
-    rank_level: u32,
-) -> u32 {
-    let mut total_exp = weapon_base_exp * level;
-    total_exp += current_exp;
-
-    let level_config_map = std::sync::Arc::clone(weapon_level_excel_config_collection::get());
-    for lvl in 1..level {
-        if let Some(level_config) = level_config_map.get(&lvl) {
-            let rank_index = (rank_level as usize).saturating_sub(1);
-            if rank_index < level_config.required_exps.len() {
-                total_exp += level_config.required_exps[rank_index];
-            }
-        }
+) -> crate::transaction::InventoryResult<()> {
+    let mut exp = 0u32;
+    for current in relic.level..level.min(row.max_level) {
+        exp = exp
+            .checked_add(
+                reliquary_level_excel_config_collection::get()
+                    .get(&((row.rank_level << 8) + current))
+                    .ok_or(Retcode::RetNotFoundConfig)?
+                    .exp,
+            )
+            .ok_or(Retcode::RetItemExceedLimit)?;
     }
-
-    total_exp
+    advance_relic(relic, row, exp.saturating_sub(relic.exp))
 }
 
-fn get_reliquary_total_exp(level: u32, current_exp: u32, rank_level: u32) -> u32 {
-    let mut total_exp = current_exp;
-
-    let level_config_map = std::sync::Arc::clone(reliquary_level_excel_config_collection::get());
-    for lvl in 1..level {
-        let level_key = (rank_level << 8) + lvl;
-        if let Some(level_config) = level_config_map.get(&level_key) {
-            total_exp += level_config.exp;
+fn advance_relic(
+    relic: &mut snezhnaya_gi_proto::server_only::ReliquaryBin,
+    row: &snezhnaya_gi_data::excel::ReliquaryExcelConfig,
+    exp: u32,
+) -> crate::transaction::InventoryResult<()> {
+    use rand::seq::SliceRandom;
+    let mut total = relic.exp as u64 + exp as u64;
+    let main = reliquary_main_prop_excel_config_collection::get()
+        .get(&relic.main_prop_id)
+        .ok_or(Retcode::RetNotFoundConfig)?
+        .prop_type;
+    let mut rng = rand::thread_rng();
+    while relic.level < row.max_level {
+        let required = reliquary_level_excel_config_collection::get()
+            .get(&((row.rank_level << 8) + relic.level))
+            .filter(|r| r.exp > 0)
+            .ok_or(Retcode::RetNotFoundConfig)?
+            .exp as u64;
+        if total < required {
+            break;
+        }
+        total -= required;
+        relic.level += 1;
+        if row.add_prop_levels.contains(&relic.level) {
+            let mut types = Vec::new();
+            for id in &relic.append_prop_id_list {
+                let prop = reliquary_affix_excel_config_collection::get()
+                    .get(id)
+                    .ok_or(Retcode::RetNotFoundConfig)?
+                    .prop_type;
+                if !types.contains(&prop) {
+                    types.push(prop);
+                }
+            }
+            let selected = if types.len() < 4 {
+                None
+            } else {
+                let guaranteed = crate::reliquary::guaranteed_upgrade(relic, row)?;
+                Some(
+                    guaranteed
+                        .unwrap_or(*types.choose(&mut rng).ok_or(Retcode::RetNotFoundConfig)?),
+                )
+            };
+            let choices: Vec<_> = reliquary_affix_excel_config_collection::get()
+                .values()
+                .filter(|p| {
+                    p.depot_id == row.append_prop_depot_id
+                        && p.weight > 0
+                        && selected.map_or(
+                            p.prop_type != main && !types.contains(&p.prop_type),
+                            |prop| p.prop_type == prop,
+                        )
+                })
+                .collect();
+            relic.append_prop_id_list.push(
+                choices
+                    .choose_weighted(&mut rng, |p| p.weight)
+                    .map_err(|_| Retcode::RetNotFoundConfig)?
+                    .id,
+            );
         }
     }
-
-    total_exp
+    relic.exp = if relic.level >= row.max_level {
+        0
+    } else {
+        u32::try_from(total).map_err(|_| Retcode::RetItemExceedLimit)?
+    };
+    Ok(())
 }

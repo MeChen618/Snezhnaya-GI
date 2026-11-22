@@ -1,4 +1,5 @@
 pub mod common;
+pub mod production;
 
 mod avatar_costume_excel_config;
 mod avatar_curve_excel_config;
@@ -97,6 +98,7 @@ macro_rules! excel_loader {
                 [<$name:snake _collection>]::load_from_json(excel_bin_output_path)?;
             })*
 
+            production::ProductionConfig::load(excel_bin_output_path)?;
             Ok(())
         }
 

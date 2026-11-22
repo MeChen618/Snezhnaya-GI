@@ -12,7 +12,9 @@ use snezhnaya_gi_data::config::load_avatar_talent_configs_from_bin;
 use snezhnaya_gi_data::custom::{CombinedDrop, GadgetMapping};
 use snezhnaya_gi_data::quest::quest_config::load_quest_configs_from_bin;
 use snezhnaya_gi_data::scene::scene_point_config::load_scene_point_configs_from_bin;
-use snezhnaya_gi_data::scene::script_cache::{init_scene_static_templates, load_lua_vm};
+use snezhnaya_gi_data::scene::script_cache::{
+    compiled_lua_scripts, init_scene_static_templates, load_lua_vm,
+};
 use snezhnaya_gi_data::{
     config::load_avatar_configs_from_bin, config::load_gadget_configs_from_bin, custom, excel,
     GAME_SERVER_CONFIG, REGION_LIST,
@@ -114,6 +116,13 @@ async fn main() -> Result<()> {
 
     let udp_server = UdpServer::bind(state).await?;
     udp_server.serve(state).await;
+    state.logic_simulator.shutdown().await;
+    state
+        .db_handle
+        .shutdown()
+        .await
+        .context("flushing player saves before shutdown")?;
+    tracing::info!("all player saves flushed; server stopped");
 
     Ok(())
 }
@@ -133,6 +142,8 @@ fn load_resources() -> Result<()> {
         .context("loading talent configurations")?;
     load_quest_configs_from_bin("assets/BinOutput");
     load_scene_point_configs_from_bin("assets/BinOutput");
+    compiled_lua_scripts("assets/lua/common").context("compiling common Lua scripts")?;
+    compiled_lua_scripts("assets/lua/gadget").context("compiling gadget Lua scripts")?;
     load_lua_vm("assets/lua/common");
     init_scene_static_templates("assets/lua/scene");
     let avatars = excel::avatar_excel_config_collection::get().len();

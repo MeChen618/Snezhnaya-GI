@@ -10,6 +10,8 @@ pub struct ReliquaryMainPropExcelConfig {
     pub id: u32,
     pub prop_depot_id: u32,
     pub prop_type: FightPropType,
+    #[serde(default)]
+    pub weight: u32,
 }
 
 pub trait ReliquaryMainPropExcelConfigKeyed<K> {

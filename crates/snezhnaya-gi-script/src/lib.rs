@@ -21,8 +21,8 @@ use crate::script_group_manager::{
     handle_player_move_for_group_loading, handle_player_move_for_region_entry, GroupLoadManager,
 };
 use crate::script_lib::{
-    call_lua_on_be_hurt, call_lua_on_client_execute_req, call_lua_trigger_action, call_lua_trigger_condition,
-    BevyScriptLib, GroupVariableStore,
+    call_lua_on_be_hurt, call_lua_on_client_execute_req, call_lua_trigger_action,
+    call_lua_trigger_condition, BevyScriptLib, GroupVariableStore,
 };
 use crate::script_load::{GroupLoadState, SceneGroupRuntime};
 use crate::script_lua_vm::LuaRuntime;
@@ -673,6 +673,7 @@ fn handle_script_command_group_event(
     mut refresh_group_entity_event: MessageWriter<RefreshGroupEntityEvent>,
     mut challenge_manager: ResMut<ChallengeManager>,
     mut challenge_finish_events: MessageWriter<ChallengeFinishEvent>,
+    world_owner: Res<WorldOwnerUID>,
 ) {
     for event in ev_reader.read() {
         match &event.command {
@@ -748,13 +749,19 @@ fn handle_script_command_group_event(
 
                     registry.groups.insert(*group_id, GroupLoadState::Loading);
 
-                    let runtime =
-                        SceneGroupRuntime::new(*scene_id, *block_id, *group_id, &mut lua_vm);
+                    let runtime = SceneGroupRuntime::new(
+                        *scene_id,
+                        *block_id,
+                        *group_id,
+                        world_owner.0,
+                        &mut lua_vm,
+                    );
 
                     match runtime {
                         Some(rt) => {
                             let vars = rt.variables.clone();
                             variable_store.0.init_group_variables(*group_id, vars);
+                            variable_store.0.set_suite(*group_id, rt.active_suites[0]);
                             registry
                                 .groups
                                 .insert(*group_id, GroupLoadState::Loaded(rt));
@@ -824,6 +831,9 @@ fn handle_script_command_group_event(
                 );
 
                 if let Some(GroupLoadState::Loaded(rt)) = registry.groups.get_mut(group_id) {
+                    if *suite_id == 0 || *suite_id as usize > rt.data.suites.len() {
+                        continue;
+                    }
                     let block_id = rt.data.base_info.block_id;
 
                     refresh_group_entity_event.write(RefreshGroupEntityEvent {
@@ -833,6 +843,7 @@ fn handle_script_command_group_event(
                     });
 
                     rt.active_suites = vec![*suite_id];
+                    variable_store.0.set_suite(*group_id, *suite_id);
                     rt.recompute_active_triggers();
 
                     let initial_vars: HashMap<String, i32> = rt
@@ -855,7 +866,16 @@ fn handle_script_command_group_event(
                     suite_id
                 );
                 if let Some(GroupLoadState::Loaded(rt)) = registry.groups.get_mut(group_id) {
+                    if *suite_id == 0 || *suite_id as usize > rt.data.suites.len() {
+                        continue;
+                    }
+                    refresh_group_entity_event.write(RefreshGroupEntityEvent {
+                        group_id: *group_id,
+                        suite_id: *suite_id,
+                        block_id: rt.data.base_info.block_id,
+                    });
                     rt.active_suites = vec![*suite_id];
+                    variable_store.0.set_suite(*group_id, *suite_id);
                     rt.recompute_active_triggers();
                 }
             }
@@ -947,8 +967,9 @@ fn handle_script_command_challenge_event(
                     challenge_index
                 );
 
-                let dungeon_challenge_config_collection_clone =
-                    Arc::clone(snezhnaya_gi_data::excel::dungeon_challenge_config_collection::get());
+                let dungeon_challenge_config_collection_clone = Arc::clone(
+                    snezhnaya_gi_data::excel::dungeon_challenge_config_collection::get(),
+                );
 
                 let config = dungeon_challenge_config_collection_clone.get(challenge_id);
 

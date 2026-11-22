@@ -665,6 +665,36 @@ message PlayerItemCompBin {
   bool is_psn_version_modify = 26;
   repeated ReliquaryGuaranteeDepotBin reliquary_guarantee_depot_list = 27;
   repeated Uint32PairBin reliquary_filter_state_list = 30;
+  uint32 reliquary_transfer_exp = 10001;
+  repeated ReliquaryWearCustomDataBin reliquary_wear_custom_data = 10002;
+  ReliquaryTransmuterBin reliquary_transmuter = 10003;
+}
+
+message ReliquaryTransmuterBin {
+  uint32 schedule_id = 1;
+  uint32 end_time = 2;
+  uint32 offering_count = 3;
+  double offering_progress = 4;
+  map<uint32, uint32> purchase_count_map = 5;
+  uint32 dust_progress = 6;
+  ReliquaryReforgeBin pending_reforge = 7;
+}
+
+message ReliquaryReforgeBin {
+  uint64 guid = 1;
+  repeated uint32 append_prop_type_list = 2;
+  repeated uint32 append_prop_id_list = 3;
+}
+
+message ReliquaryWearCustomDataBin {
+  uint32 avatar_id = 1;
+  uint32 avatar_element_type = 2;
+  uint32 index = 3;
+  bool is_all = 4;
+  repeated uint32 reliquary_set_id_list = 5;
+  repeated Uint32PairBin main_prop_type_map = 6;
+  repeated uint32 main_prop_type_list = 7;
+  repeated uint32 append_prop_type_list = 8;
 }
 
 message DungeonGroupRecordBin {

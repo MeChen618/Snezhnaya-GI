@@ -207,6 +207,13 @@ impl ItemBin {
                                 exp: reliquary.exp,
                                 main_prop_id: reliquary.main_prop_id,
                                 append_prop_id_list: reliquary.append_prop_id_list.clone(),
+                                is_relic_starred: reliquary.is_relic_starred,
+                                purchased_append_prop_id_list: reliquary
+                                    .purchased_append_prop_id_list
+                                    .clone(),
+                                definite_append_prop_id_list: reliquary
+                                    .definite_append_prop_id_list
+                                    .clone(),
                                 ..Default::default()
                             },
                         )),

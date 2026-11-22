@@ -6,4 +6,8 @@ pub enum DbError {
     NotFound,
     #[error("serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+    #[error("invalid database state: {0}")]
+    InvalidData(String),
+    #[error("database worker is unavailable")]
+    Unavailable,
 }

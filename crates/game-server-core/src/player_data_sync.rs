@@ -35,6 +35,8 @@ pub fn sync_player_data(players: Res<Players>, message_output: Res<MessageOutput
         let Some(ref player_basic_bin) = player_info.basic_bin else {
             continue;
         };
+        let empty_items = Default::default();
+        let items = player_info.item_bin.as_ref().unwrap_or(&empty_items);
         message_output.send(
             *uid,
             "PlayerDataNotify",
@@ -56,9 +58,10 @@ pub fn sync_player_data(players: Res<Players>, message_output: Res<MessageOutput
                     PROP_PLAYER_RESIN:200;
                     PROP_IS_DIVEABLE :1;
                     PROP_CUR_PHLOGISTON :10000;
-                    PROP_PLAYER_HCOIN :100000991;
-                    PROP_PLAYER_SCOIN :100000992;
-                    PROP_PLAYER_MCOIN :100000993;
+                    PROP_PLAYER_HCOIN :items.hcoin;
+                    PROP_PLAYER_SCOIN :items.scoin;
+                    PROP_PLAYER_MCOIN :items.mcoin;
+                    PROP_PLAYER_HOME_COIN :items.home_coin;
                 },
                 server_time: time_util::unix_timestamp_ms(),
                 is_first_login_today: false,
@@ -314,9 +317,7 @@ pub fn sync_quest_list(players: Res<Players>, message_output: Res<MessageOutput>
                 message_output.send(
                     *uid,
                     "FinishedParentQuestNotify",
-                    FinishedParentQuestNotify {
-                        parent_quest_list,
-                    },
+                    FinishedParentQuestNotify { parent_quest_list },
                 );
             }
         }

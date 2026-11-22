@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use std::{
     collections::HashMap,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
 
@@ -36,6 +36,44 @@ pub fn get_scene_config_collection() -> Arc<HashMap<u32, SceneConfigTemplate>> {
 
 pub static SCENE_LUA_VM: OnceLock<Lua> = OnceLock::new();
 
+#[derive(Clone)]
+pub struct CompiledLuaScript {
+    pub name: String,
+    pub bytecode: Arc<[u8]>,
+}
+
+static COMPILED_SCRIPTS: OnceLock<DashMap<PathBuf, Arc<Vec<CompiledLuaScript>>>> = OnceLock::new();
+
+pub fn compiled_lua_scripts(root: &str) -> std::io::Result<Arc<Vec<CompiledLuaScript>>> {
+    let root = fs::canonicalize(root)?;
+    let cache = COMPILED_SCRIPTS.get_or_init(DashMap::new);
+    if let Some(scripts) = cache.get(&root) {
+        return Ok(Arc::clone(scripts.value()));
+    }
+    let entry = cache.entry(root.clone()).or_try_insert_with(|| {
+        let compiler = Lua::new();
+        let mut sources = HashMap::new();
+        scan_dir(&root, &root, &mut sources)?;
+        let mut sources: Vec<_> = sources.into_iter().collect();
+        sources.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut scripts = Vec::with_capacity(sources.len());
+        for (name, source) in sources {
+            let source = source.replace("ScriptLib.", "ScriptLib:");
+            match compiler.load(&source).set_name(&name).into_function() {
+                Ok(function) => scripts.push(CompiledLuaScript {
+                    name,
+                    bytecode: function.dump(false).into(),
+                }),
+                Err(error) => {
+                    tracing::warn!(%error, script = %name, "Lua script could not be compiled")
+                }
+            }
+        }
+        Ok::<_, std::io::Error>(Arc::new(scripts))
+    })?;
+    Ok(Arc::clone(entry.value()))
+}
+
 pub fn load_lua_vm(root: &str) {
     SCENE_LUA_VM.set(create_lua_vm(root)).unwrap();
 }
@@ -45,9 +83,9 @@ pub fn create_lua_vm(root: &str) -> Lua {
 
     register_all_enums(&lua);
 
-    let modules = load_lua_directory(root);
-
-    install_memory_require(&lua, modules);
+    // 共享编译结果，Lua 状态仍然由各世界独立持有。
+    let modules = compiled_lua_scripts(root).expect("loading common Lua scripts");
+    install_memory_require(&lua, &modules);
 
     lua
 }
@@ -67,21 +105,15 @@ pub fn register_all_enums(lua: &Lua) {
     inject_enum::<VisionLevelType>(lua, "VisionLevelType").unwrap();
 }
 
-fn load_lua_directory(root: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    scan_dir(Path::new(root), Path::new(root), &mut map);
-    map
-}
-
-fn scan_dir(root: &Path, path: &Path, map: &mut HashMap<String, String>) {
-    for entry in fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap();
+fn scan_dir(root: &Path, path: &Path, map: &mut HashMap<String, String>) -> std::io::Result<()> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
         let path = entry.path();
 
         if path.is_dir() {
-            scan_dir(root, &path, map);
+            scan_dir(root, &path, map)?;
         } else if path.extension().and_then(|s| s.to_str()) == Some("lua") {
-            let content = common::string_util::read_utf8_no_bom(&path).unwrap();
+            let content = common::string_util::read_utf8_no_bom(&path)?;
 
             let rel = path.strip_prefix(root).unwrap();
             let module_name = rel
@@ -93,19 +125,20 @@ fn scan_dir(root: &Path, path: &Path, map: &mut HashMap<String, String>) {
             map.insert(module_name, content);
         }
     }
+    Ok(())
 }
 
-fn install_memory_require(lua: &Lua, modules: HashMap<String, String>) {
+fn install_memory_require(lua: &Lua, modules: &[CompiledLuaScript]) {
     let package: Table = lua.globals().get("package").unwrap();
     let preload: Table = package.get("preload").unwrap();
 
-    modules.into_iter().for_each(|(module_name, code)| {
-        let code = code.replace("ScriptLib.", "ScriptLib:");
+    modules.iter().for_each(|script| {
+        let bytecode = Arc::clone(&script.bytecode);
         let loader = lua
-            .create_function(move |lua, _: ()| lua.load(&code).eval::<Value>())
+            .create_function(move |lua, _: Value| lua.load(bytecode.as_ref()).eval::<Value>())
             .unwrap();
 
-        preload.set(module_name, loader).unwrap();
+        preload.set(script.name.as_str(), loader).unwrap();
     });
 }
 

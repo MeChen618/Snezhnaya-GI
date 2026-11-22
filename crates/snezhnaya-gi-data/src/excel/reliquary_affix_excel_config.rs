@@ -8,12 +8,16 @@ pub struct ReliquaryAffixExcelConfig {
     pub id: u32,
     #[serde(default)]
     pub depot_id: u32,
-    #[serde(default)]
+    #[serde(default, alias = "group_id")]
     pub group_id: u32,
     #[serde(default)]
     pub prop_type: FightPropType,
     #[serde(default)]
     pub prop_value: f32,
+    #[serde(default)]
+    pub weight: u32,
+    #[serde(default)]
+    pub upgrade_weight: u32,
 }
 
 pub trait ReliquaryAffixExcelConfigKeyed<K> {

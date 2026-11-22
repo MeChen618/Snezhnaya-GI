@@ -31,7 +31,7 @@ pub fn process_message(
         }
 
         return GetPlayerTokenRsp {
-            retcode: Retcode::RetAntiAddict.into(),
+            retcode: Retcode::RetRepeatLogin.into(),
             msg,
             uid,
             ..rsp

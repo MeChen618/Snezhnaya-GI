@@ -1,7 +1,7 @@
 use crate::command::LOGIC_COMMAND_QUEUE;
 use crate::{command::LogicCommand, player_world::PlayerWorld};
 use common::logging::TRACE_LOG_PACKET;
-use common::player_cache::{cache_set_is_notify, cache_set_online_status, PlayerStatusType};
+use common::player_cache::remove_player_cache;
 use common::time_util;
 use snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache;
 use snezhnaya_gi_data::GAME_SERVER_CONFIG;
@@ -52,9 +52,16 @@ impl LogicSimulator {
     pub fn offline(&self, uid: u32) {
         LogicCommand::Offline().push(uid);
     }
+
+    pub async fn shutdown(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        LogicCommand::Shutdown(tx).push(0);
+        let _ = rx.await;
+    }
 }
 
 fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
+    let _ = crate::command::SIMULATION_THREAD.set(thread::current());
     // client_player_uid -> world_owner_uid
     let mut player_uid_map: HashMap<u32, u32> = HashMap::new();
     let mut player_world_map: HashMap<u32, PlayerWorld> = HashMap::new();
@@ -64,6 +71,21 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
         while let Some((uid, command)) = LOGIC_COMMAND_QUEUE.pop() {
             use LogicCommand::*;
             match command {
+                Shutdown(done) => {
+                    for (&uid, &owner) in &player_uid_map {
+                        if let Some(world) = player_world_map.get_mut(&owner) {
+                            let _ = save_data_tx
+                                .blocking_send((uid, world.serialize_player_information(uid)));
+                        }
+                        remove_player_cache(uid);
+                        if let Some(versions) = snezhnaya_gi_message::PLAYER_VERSION.get() {
+                            versions.remove(&uid);
+                        }
+                    }
+                    player_world_map.clear();
+                    let _ = done.send(());
+                    return;
+                }
                 CreateWorld {
                     player_information,
                     output,
@@ -146,7 +168,7 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
                                                 None => {}
                                                 Some(save_time) => {
                                                     let cur_time = time_util::unix_timestamp();
-                                                    if (cur_time - *save_time) >= 60
+                                                    if cur_time.saturating_sub(*save_time) >= 60
                                                         && world.should_save(uid)
                                                     {
                                                         *save_time = cur_time;
@@ -184,13 +206,16 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
                         player_save_time_map.remove(&uid);
                     }
                     get_group_entity_state_cache().clear_user_cache(uid);
-                    cache_set_online_status(uid, PlayerStatusType::PlayerStatusOffline);
-                    cache_set_is_notify(uid, false);
+                    remove_player_cache(uid);
+                    if let Some(versions) = snezhnaya_gi_message::PLAYER_VERSION.get() {
+                        versions.remove(&uid);
+                    }
                     tracing::info!("Player {} offline", uid);
                 }
             }
         }
 
-        thread::sleep(std::time::Duration::from_micros(20));
+        // 有包才唤醒，空闲时不反复扫描队列。
+        thread::park();
     }
 }

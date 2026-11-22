@@ -2198,6 +2198,7 @@ dependencies = [
  "rstar",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

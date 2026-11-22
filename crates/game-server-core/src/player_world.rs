@@ -21,6 +21,7 @@ use snezhnaya_gi_message::{
     get_player_version,
     output::{ClientOutput, MessageOutput},
 };
+use snezhnaya_gi_misc::MiscPlugin;
 use snezhnaya_gi_pathfinding::PathfindingPlugin;
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::dy_parser::get_ty_value_by_version;
@@ -31,9 +32,21 @@ use snezhnaya_gi_quest::QuestPlugin;
 use snezhnaya_gi_scene::ScenePlugin;
 use snezhnaya_gi_script::ScriptPlugin;
 use snezhnaya_gi_social::SocialPlugin;
-use snezhnaya_gi_misc::MiscPlugin;
 
 pub struct PlayerWorld(App);
+
+impl Drop for PlayerWorld {
+    fn drop(&mut self) {
+        if let Some(queue) = self
+            .0
+            .world()
+            .get_resource::<snezhnaya_gi_script::ScriptCommandQueue>()
+        {
+            // 队列里的 Lua 表可能反向持有虚拟机，离线时先断开引用。
+            while queue.0.pop().is_some() {}
+        }
+    }
+}
 
 impl PlayerWorld {
     pub fn new(player_information: PlayerDataBin, output: ClientOutput) -> Self {
@@ -191,7 +204,7 @@ impl PlayerWorld {
             None => {
                 vec![]
             }
-            Some(player) => player.encode_to_vec(),
+            Some(player) => snezhnaya_gi_persistence::player_snapshot(player).encode_to_vec(),
         }
     }
 
@@ -202,11 +215,6 @@ impl PlayerWorld {
         let Some(player_info) = players.get(uid) else {
             return false;
         };
-        let scene_id = if let Some(ref player_scene_bin) = player_info.scene_bin {
-            player_scene_bin.my_cur_scene_id
-        } else {
-            return false;
-        };
-        [3, 5, 6, 7, 11, 101, 103].contains(&scene_id)
+        player_info.scene_bin.is_some()
     }
 }

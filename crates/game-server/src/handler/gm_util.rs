@@ -47,34 +47,44 @@ pub async fn execute_gm_cmd(
             state
                 .stop_flag
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            state.sessions.iter().for_each(|x| {
+            let connections: Vec<_> = state
+                .sessions
+                .iter()
+                .map(|s| s.connection.clone())
+                .collect();
+            for connection in connections {
                 tokio::spawn(async move {
-                    x.connection.close().await;
+                    connection.close().await;
                 });
-            });
+            }
             rsp.msg = "ok".to_string();
         }
         "kick" => {
             rsp.msg = "set_target_offline".to_string();
-            match state.sessions.iter().find(|x| match x.player_uid.get() {
-                None => false,
-                Some(player_uid) => player_uid.eq(&req.player_uid),
-            }) {
+            let connection = state
+                .sessions
+                .iter()
+                .find(|x| match x.player_uid.get() {
+                    None => false,
+                    Some(player_uid) => player_uid.eq(&req.player_uid),
+                })
+                .map(|s| s.connection.clone());
+            match connection {
                 None => {}
-                Some(session) => {
+                Some(connection) => {
                     tracing::info!("kick player_uid:{}", req.player_uid);
                     let socket_clone = Arc::clone(&state.socket);
                     let data = Some(crate::net::control_packet::ControlPacket::build(
                         crate::net::control_packet::ControlPacketType::Disconnect,
-                        session.connection.conv,
-                        session.connection.token,
+                        connection.conv,
+                        connection.token,
                         5,
                     ))
                     .unwrap();
                     let _ = socket_clone
-                        .send_to(data.as_slice(), session.connection.source_addr)
+                        .send_to(data.as_slice(), connection.source_addr)
                         .await;
-                    session.connection.close().await;
+                    connection.close().await;
                     rsp.msg = "ok".to_string();
                 }
             }

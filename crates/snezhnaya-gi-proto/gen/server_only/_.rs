@@ -9013,6 +9013,15 @@ pub struct ReliquaryBin {
     #[prost(uint32, repeated, tag = "5")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub append_prop_id_list: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bool, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub is_relic_starred: bool,
+    #[prost(uint32, repeated, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub purchased_append_prop_id_list: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub definite_append_prop_id_list: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -13689,6 +13698,85 @@ pub struct PlayerItemCompBin {
     #[prost(message, repeated, tag = "30")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub reliquary_filter_state_list: ::prost::alloc::vec::Vec<Uint32PairBin>,
+    #[prost(uint32, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_transfer_exp: u32,
+    #[prost(message, repeated, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_wear_custom_data: ::prost::alloc::vec::Vec<ReliquaryWearCustomDataBin>,
+    #[prost(message, optional, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_transmuter: ::core::option::Option<ReliquaryTransmuterBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReliquaryTransmuterBin {
+    #[prost(uint32, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub schedule_id: u32,
+    #[prost(uint32, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub end_time: u32,
+    #[prost(uint32, tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub offering_count: u32,
+    #[prost(double, tag = "4")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub offering_progress: f64,
+    #[prost(map = "uint32, uint32", tag = "5")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub purchase_count_map: ::std::collections::HashMap<u32, u32>,
+    #[prost(uint32, tag = "6")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dust_progress: u32,
+    #[prost(message, optional, tag = "7")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub pending_reforge: ::core::option::Option<ReliquaryReforgeBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReliquaryReforgeBin {
+    #[serde(with="crate::u64_string")]
+    #[prost(uint64, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub guid: u64,
+    #[prost(uint32, repeated, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub append_prop_type_list: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub append_prop_id_list: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReliquaryWearCustomDataBin {
+    #[prost(uint32, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub avatar_id: u32,
+    #[prost(uint32, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub avatar_element_type: u32,
+    #[prost(uint32, tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub index: u32,
+    #[prost(bool, tag = "4")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub is_all: bool,
+    #[prost(uint32, repeated, tag = "5")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_set_id_list: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "6")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub main_prop_type_map: ::prost::alloc::vec::Vec<Uint32PairBin>,
+    #[prost(uint32, repeated, tag = "7")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub main_prop_type_list: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, tag = "8")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub append_prop_type_list: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

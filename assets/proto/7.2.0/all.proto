@@ -24831,9 +24831,9 @@ message GJENIKKDPLC {
 
 message CompoundQueueData {
   uint32 compound_id = 1;
-  uint32 FIAKEMOJBMG = 6;
-  uint32 CBEEKIKMJBH = 9;
-  uint32 FONLJCGCGKL = 10;
+  uint32 wait_count = 6;
+  uint32 output_count = 9;
+  uint32 output_time = 10;
 }
 
 message _UgcTriggerConditionGadgetStateChange {
@@ -40887,8 +40887,8 @@ message CLMALMPIKHP {
 
 // CmdId: 26976
 message ReliquaryUpgradeRsp {
-  repeated uint32 PENKCPCPLEK = 5;
-  repeated uint32 BCBHMOIHDHH = 6;
+  repeated uint32 cur_append_prop_list = 5;
+  repeated uint32 old_append_prop_list = 6;
   uint32 old_level = 7;
   int32 retcode = 9;
   uint64 target_reliquary_guid = 11;
@@ -55529,11 +55529,11 @@ message GetCityHuntingOfferRsp {
 message ForgeQueueData {
   uint32 forge_id = 2;
   uint32 finish_count = 3;
-  uint32 AIENPHMKBBN = 7;
+  uint32 queue_id = 7;
   uint32 avatar_id = 9;
-  uint32 HBFJABNFIAI = 11;
-  uint32 EFODKOCNAMD = 14;
-  uint32 LONBPOCLDFL = 15;
+  uint32 next_finish_timestamp = 11;
+  uint32 total_finish_timestamp = 14;
+  uint32 unfinish_count = 15;
 }
 
 message PlantFlowerGetCanGiveFriendFlowerRsp {

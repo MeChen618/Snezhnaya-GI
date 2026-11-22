@@ -7,10 +7,21 @@ static UID_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 pub fn insert_or_update_player_data(
     conn: &DbConnection,
     uid: i32,
-    data: Vec<u8>,
+    data: impl AsRef<[u8]>,
 ) -> Result<(), DbError> {
+    let data = data.as_ref();
     let key = format!("player_data:{}", uid);
-    conn.0.put(key, data)?;
+    if data.is_empty() {
+        return Err(DbError::InvalidData("empty player save".into()));
+    }
+    let mut batch = rocksdb::WriteBatch::default();
+    if let Some(previous) = conn.0.get(&key)? {
+        batch.put(format!("player_data_backup:{}", uid), previous);
+    }
+    batch.put(key, data);
+    let mut options = rocksdb::WriteOptions::default();
+    options.set_sync(true);
+    conn.0.write_opt(batch, &options)?;
     Ok(())
 }
 
@@ -42,19 +53,18 @@ pub fn select_user_uid_by_account_uid(
 pub fn insert_user_uid(conn: &DbConnection, account_uid: &str) -> Result<UserUidRow, DbError> {
     let key = format!("user_uid:{}", account_uid);
 
-    let uid = {
-        let _guard = UID_LOCK.lock().unwrap();
-
-        let uid_key = "uid_counter";
-        let mut uid = 10001;
-
-        if let Some(value) = conn.0.get(uid_key)? {
-            uid = String::from_utf8_lossy(&value).parse().unwrap_or(10001) + 1;
-        }
-
-        conn.0.put(uid_key, uid.to_string().as_bytes())?;
-
-        uid
+    let _guard = UID_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(existing) = select_user_uid_by_account_uid(conn, account_uid)? {
+        return Ok(existing);
+    }
+    let uid = match conn.0.get("uid_counter")? {
+        Some(value) => std::str::from_utf8(&value)
+            .ok()
+            .and_then(|s| s.parse::<i32>().ok())
+            .filter(|uid| *uid >= 10001)
+            .and_then(|uid| uid.checked_add(1))
+            .ok_or_else(|| DbError::InvalidData("uid_counter is corrupt or exhausted".into()))?,
+        None => 10001,
     };
 
     let user_uid = UserUidRow {
@@ -65,6 +75,7 @@ pub fn insert_user_uid(conn: &DbConnection, account_uid: &str) -> Result<UserUid
     let value = serde_json::to_vec(&user_uid)?;
 
     crate::batch_write(conn, |batch| {
+        batch.put("uid_counter", uid.to_string().as_bytes());
         batch.put(key, value);
     })?;
 

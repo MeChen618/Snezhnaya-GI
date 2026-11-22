@@ -92,7 +92,7 @@ pub fn cache_set_scene_level(uid: u32, scene_id: u32, level: u32) {
 }
 
 pub fn cache_get_scene_level(uid: u32, scene_id: u32) -> Option<u32> {
-    get_player_cache(uid).and_then(|v| v.scene_level.get(&scene_id).map(|v| *v))
+    read_player_cache(uid, |v| v.scene_level.get(&scene_id).map(|v| *v)).flatten()
 }
 
 pub fn cache_set_is_tp(uid: u32, value: bool) {
@@ -100,7 +100,7 @@ pub fn cache_set_is_tp(uid: u32, value: bool) {
 }
 
 pub fn cache_get_is_tp(uid: u32) -> Option<bool> {
-    get_player_cache(uid).map(|v| v.is_tp)
+    read_player_cache(uid, |v| v.is_tp)
 }
 
 pub fn cache_set_is_mp(uid: u32, value: bool) {
@@ -108,7 +108,7 @@ pub fn cache_set_is_mp(uid: u32, value: bool) {
 }
 
 pub fn cache_get_is_mp(uid: u32) -> Option<bool> {
-    get_player_cache(uid).map(|v| v.is_mp)
+    read_player_cache(uid, |v| v.is_mp)
 }
 
 pub fn cache_set_is_notify(uid: u32, value: bool) {
@@ -116,7 +116,7 @@ pub fn cache_set_is_notify(uid: u32, value: bool) {
 }
 
 pub fn cache_get_is_notify(uid: u32) -> Option<bool> {
-    get_player_cache(uid).map(|v| v.is_notify)
+    read_player_cache(uid, |v| v.is_notify)
 }
 
 pub fn cache_set_is_pause(uid: u32, value: bool) {
@@ -124,7 +124,7 @@ pub fn cache_set_is_pause(uid: u32, value: bool) {
 }
 
 pub fn cache_get_is_pause(uid: u32) -> Option<bool> {
-    get_player_cache(uid).map(|v| v.is_pause)
+    read_player_cache(uid, |v| v.is_pause)
 }
 
 pub fn cache_set_client_time(uid: u32, value: u32) {
@@ -132,7 +132,7 @@ pub fn cache_set_client_time(uid: u32, value: u32) {
 }
 
 pub fn cache_get_client_time(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.client_time)
+    read_player_cache(uid, |v| v.client_time)
 }
 
 pub fn cache_set_player_client_data_version(uid: u32, client_data_version: u32) {
@@ -175,38 +175,48 @@ pub fn get_player_cache(uid: u32) -> Option<PlayerCache> {
     PLAYER_CACHE.get()?.get(&uid).map(|v| v.clone())
 }
 
+fn read_player_cache<T>(uid: u32, read: impl FnOnce(&PlayerCache) -> T) -> Option<T> {
+    PLAYER_CACHE.get()?.get(&uid).map(|cache| read(&cache))
+}
+
+pub fn remove_player_cache(uid: u32) {
+    if let Some(cache) = PLAYER_CACHE.get() {
+        cache.remove(&uid);
+    }
+}
+
 pub fn cache_get_player_client_data_version(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.client_data_version)
+    read_player_cache(uid, |v| v.client_data_version)
 }
 
 pub fn cache_get_player_nick_name(uid: u32) -> Option<String> {
-    get_player_cache(uid).map(|v| v.nick_name)
+    read_player_cache(uid, |v| v.nick_name.clone())
 }
 
 pub fn cache_get_player_level(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.player_level)
+    read_player_cache(uid, |v| v.player_level)
 }
 
 pub fn cache_get_language(uid: u32) -> Option<Language> {
-    get_player_cache(uid).map(|v| v.language)
+    read_player_cache(uid, |v| v.language)
 }
 
 pub fn cache_get_name_card_id(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.name_card_id)
+    read_player_cache(uid, |v| v.name_card_id)
 }
 
 pub fn cache_get_profile_picture_id(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.profile_picture_id)
+    read_player_cache(uid, |v| v.profile_picture_id)
 }
 
 pub fn cache_get_profile_frame_id(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.profile_frame_id)
+    read_player_cache(uid, |v| v.profile_frame_id)
 }
 
 pub fn cache_get_cur_player_num_in_world(uid: u32) -> Option<u32> {
-    get_player_cache(uid).map(|v| v.cur_player_num_in_world)
+    read_player_cache(uid, |v| v.cur_player_num_in_world)
 }
 
 pub fn cache_get_online_status(uid: u32) -> Option<PlayerStatusType> {
-    get_player_cache(uid).map(|v| v.online_status)
+    read_player_cache(uid, |v| v.online_status)
 }

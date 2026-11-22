@@ -33,7 +33,7 @@ impl UdpServer {
         let packet_handler_task = self.packet_handler.clone();
         let mut buf = [0u8; 1400];
 
-        tokio::spawn(async move {
+        let cleanup = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
             loop {
                 ticker.tick().await;
@@ -47,17 +47,19 @@ impl UdpServer {
             }
         });
 
+        let shutdown_signal = wait_for_shutdown();
+        tokio::pin!(shutdown_signal);
+        let mut shutdown_poll = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
-            if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                loop {
-                    if state.sessions.len() == 0 {
-                        return;
-                    }
-                    tracing::warn!("stop game server...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            let received = tokio::select! {
+                _ = &mut shutdown_signal => break,
+                _ = shutdown_poll.tick() => {
+                    if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                    continue;
                 }
-            }
-            let Ok((len, addr)) = self.socket.recv_from(&mut buf).await else {
+                received = self.socket.recv_from(&mut buf) => received,
+            };
+            let Ok((len, addr)) = received else {
                 continue;
             };
 
@@ -81,7 +83,7 @@ impl UdpServer {
                     let buf = &buf[..len];
                     let (conv, token) = (kcp::get_conv(buf), kcp::get_token(buf));
 
-                    if let Some(connection) = conn_mgr.get(conv, token) {
+                    if let Some(connection) = conn_mgr.get(conv, token).map(|c| c.clone()) {
                         conn_mgr.last_seen.insert(conv, tokio::time::Instant::now());
                         let _ = connection.event_tx.send(NetEvent::Recv(buf.into())).await;
                     }
@@ -89,6 +91,19 @@ impl UdpServer {
                 _ => (),
             }
         }
+        state
+            .stop_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        cleanup.abort();
+        let connections: Vec<_> = state
+            .sessions
+            .iter()
+            .map(|s| s.connection.clone())
+            .collect();
+        for connection in connections {
+            connection.close().await;
+        }
+        self.packet_handler.shutdown().await;
     }
 
     async fn handle_control_packet(
@@ -108,7 +123,9 @@ impl UdpServer {
                 self.packet_handler.add_connection(conn.clone());
                 tracing::debug!(
                     "new connection from {}, conv:{} token:{}",
-                    addr, conn.conv, conn.token
+                    addr,
+                    conn.conv,
+                    conn.token
                 );
 
                 Some(ControlPacket::build(
@@ -136,6 +153,20 @@ impl UdpServer {
             ControlPacketType::Pre => None,
         }
     }
+}
+
+async fn wait_for_shutdown() {
+    #[cfg(unix)]
+    {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+                return;
+            }
+            Err(error) => tracing::warn!(%error, "could not install SIGTERM handler"),
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[derive(Clone)]
@@ -205,10 +236,9 @@ impl ConnectionManager {
         let now = tokio::time::Instant::now();
         self.last_seen.iter().for_each(|x| {
             if now.duration_since(*x.value()) > tokio::time::Duration::from_secs(30) {
-                remove_list.push((
-                    self.connections.get(x.key()).unwrap().conv,
-                    self.connections.get(x.key()).unwrap().token,
-                ));
+                if let Some(connection) = self.connections.get(x.key()) {
+                    remove_list.push((connection.conv, connection.token));
+                }
             }
         });
         remove_list

@@ -63,7 +63,13 @@ pub trait ScriptLib: Send + Sync + 'static {
     fn cause_dungeon_result(&self, is_success: bool);
 
     // movement
-    fn move_player_to_pos(&self, uid: u32, pos: (f32, f32, f32), rot: (f32, f32, f32), scene_id: u32);
+    fn move_player_to_pos(
+        &self,
+        uid: u32,
+        pos: (f32, f32, f32),
+        rot: (f32, f32, f32),
+        scene_id: u32,
+    );
 
     // audio/weather
     fn scene_play_sound(&self, sound_name: &str, pos: (f32, f32, f32), play_type: u32);
@@ -75,10 +81,23 @@ pub trait ScriptLib: Send + Sync + 'static {
     fn stop_platform(&self, group_id: u32, config_id: u32);
 
     // lua notification
-    fn notify_group_lua(&self, group_id: u32, event_type: u32, param1: u32, param2: u32, param3: u32);
+    fn notify_group_lua(
+        &self,
+        group_id: u32,
+        event_type: u32,
+        param1: u32,
+        param2: u32,
+        param3: u32,
+    );
 
     // server global values
-    fn set_entity_server_global_value(&self, group_id: u32, config_id: u32, sgv_name: &str, value: u32);
+    fn set_entity_server_global_value(
+        &self,
+        group_id: u32,
+        config_id: u32,
+        sgv_name: &str,
+        value: u32,
+    );
 
     // force lock/unlock
     fn unlock_force(&self, force_id: u32);
@@ -103,25 +122,41 @@ pub trait ScriptLib: Send + Sync + 'static {
     fn end_all_time_axis(&self);
 
     // teleport
-    fn trans_player_to_pos(&self, uid_list: Vec<u32>, pos: (f32, f32, f32), rot: (f32, f32, f32), scene_id: u32, radius: f32);
+    fn trans_player_to_pos(
+        &self,
+        uid_list: Vec<u32>,
+        pos: (f32, f32, f32),
+        rot: (f32, f32, f32),
+        scene_id: u32,
+        radius: f32,
+    );
 
     // gadget state (cross-group)
     fn set_group_gadget_state_by_config_id(&self, group_id: u32, config_id: u32, state: u32);
     fn set_gadget_enable_interact(&self, group_id: u32, config_id: u32, enable: bool);
 
     // monster tide
-    fn auto_monster_tide(&self, group_id: u32, source_id: u32, orders_config_id: Vec<u32>, tide_count: u32, scene_limit: u32);
+    fn auto_monster_tide(
+        &self,
+        group_id: u32,
+        source_id: u32,
+        orders_config_id: Vec<u32>,
+        tide_count: u32,
+        scene_limit: u32,
+    );
 }
 
 pub struct GroupVariableStore {
     // group_id -> (variable_name -> value)
     pub variables: RwLock<HashMap<u32, HashMap<String, i32>>>,
+    suites: RwLock<HashMap<u32, u32>>,
 }
 
 impl GroupVariableStore {
     pub fn new() -> Self {
         Self {
             variables: RwLock::new(HashMap::new()),
+            suites: RwLock::new(HashMap::new()),
         }
     }
 
@@ -137,6 +172,9 @@ impl GroupVariableStore {
     }
 
     pub fn remove_group(&self, group_id: u32) {
+        if let Ok(mut suites) = self.suites.write() {
+            suites.remove(&group_id);
+        }
         match self.variables.write() {
             Ok(mut store) => {
                 store.remove(&group_id);
@@ -145,6 +183,20 @@ impl GroupVariableStore {
                 eprintln!("Failed to lock variables store");
             }
         }
+    }
+
+    pub fn set_suite(&self, group_id: u32, suite: u32) {
+        if let Ok(mut suites) = self.suites.write() {
+            suites.insert(group_id, suite);
+        }
+    }
+
+    pub fn get_suite(&self, group_id: u32) -> u32 {
+        self.suites
+            .read()
+            .ok()
+            .and_then(|s| s.get(&group_id).copied())
+            .unwrap_or(0)
     }
 
     pub fn get_variable(&self, group_id: u32, name: &str) -> i32 {
@@ -184,7 +236,10 @@ impl GroupVariableStore {
             Ok(mut store) => {
                 if let Some(vars) = store.get_mut(&group_id) {
                     if let Some(val) = vars.get_mut(name) {
-                        *val += delta;
+                        let Some(next) = val.checked_add(delta) else {
+                            return -1;
+                        };
+                        *val = next;
                         return 0;
                     }
                 }
@@ -341,15 +396,24 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn create_gadget(&self, group_id: u32, config_id: u32) {
-        self.queue.push(ScriptCommand::CreateGadget { group_id, config_id });
+        self.queue.push(ScriptCommand::CreateGadget {
+            group_id,
+            config_id,
+        });
     }
 
     fn create_monster(&self, group_id: u32, config_id: u32) {
-        self.queue.push(ScriptCommand::CreateMonster { group_id, config_id });
+        self.queue.push(ScriptCommand::CreateMonster {
+            group_id,
+            config_id,
+        });
     }
 
     fn kill_entity_by_config_id(&self, group_id: u32, config_id: u32) {
-        self.queue.push(ScriptCommand::KillEntityByConfigId { group_id, config_id });
+        self.queue.push(ScriptCommand::KillEntityByConfigId {
+            group_id,
+            config_id,
+        });
     }
 
     fn set_is_allow_use_skill(&self, allow: bool) {
@@ -365,11 +429,17 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn show_client_guide(&self, guide_name: &str) {
-        self.queue.push(ScriptCommand::ShowClientGuide { guide_name: guide_name.to_string() });
+        self.queue.push(ScriptCommand::ShowClientGuide {
+            guide_name: guide_name.to_string(),
+        });
     }
 
     fn show_common_tips(&self, title: &str, content: &str, close_time: u32) {
-        self.queue.push(ScriptCommand::ShowCommonTips { title: title.to_string(), content: content.to_string(), close_time });
+        self.queue.push(ScriptCommand::ShowCommonTips {
+            title: title.to_string(),
+            content: content.to_string(),
+            close_time,
+        });
     }
 
     fn close_common_tips(&self) {
@@ -380,36 +450,88 @@ impl ScriptLib for BevyScriptLib {
         self.queue.push(ScriptCommand::CauseDungeonResult { is_success });
     }
 
-    fn move_player_to_pos(&self, uid: u32, pos: (f32, f32, f32), rot: (f32, f32, f32), scene_id: u32) {
-        self.queue.push(ScriptCommand::MovePlayerToPos { uid, pos, rot, scene_id });
+    fn move_player_to_pos(
+        &self,
+        uid: u32,
+        pos: (f32, f32, f32),
+        rot: (f32, f32, f32),
+        scene_id: u32,
+    ) {
+        self.queue.push(ScriptCommand::MovePlayerToPos {
+            uid,
+            pos,
+            rot,
+            scene_id,
+        });
     }
 
     fn scene_play_sound(&self, sound_name: &str, pos: (f32, f32, f32), play_type: u32) {
-        self.queue.push(ScriptCommand::ScenePlaySound { sound_name: sound_name.to_string(), pos, play_type });
+        self.queue.push(ScriptCommand::ScenePlaySound {
+            sound_name: sound_name.to_string(),
+            pos,
+            play_type,
+        });
     }
 
     fn set_weather_area_state(&self, area_id: u32, climate_type: u32) {
-        self.queue.push(ScriptCommand::SetWeatherAreaState { area_id, climate_type });
+        self.queue.push(ScriptCommand::SetWeatherAreaState {
+            area_id,
+            climate_type,
+        });
     }
 
     fn set_platform_route_id(&self, group_id: u32, config_id: u32, route_id: u32) {
-        self.queue.push(ScriptCommand::SetPlatformRouteId { group_id, config_id, route_id });
+        self.queue.push(ScriptCommand::SetPlatformRouteId {
+            group_id,
+            config_id,
+            route_id,
+        });
     }
 
     fn start_platform(&self, group_id: u32, config_id: u32) {
-        self.queue.push(ScriptCommand::StartPlatform { group_id, config_id });
+        self.queue.push(ScriptCommand::StartPlatform {
+            group_id,
+            config_id,
+        });
     }
 
     fn stop_platform(&self, group_id: u32, config_id: u32) {
-        self.queue.push(ScriptCommand::StopPlatform { group_id, config_id });
+        self.queue.push(ScriptCommand::StopPlatform {
+            group_id,
+            config_id,
+        });
     }
 
-    fn notify_group_lua(&self, group_id: u32, event_type: u32, param1: u32, param2: u32, param3: u32) {
-        self.queue.push(ScriptCommand::NotifyGroupLua { group_id, event_type, param1, param2, param3 });
+    fn notify_group_lua(
+        &self,
+        group_id: u32,
+        event_type: u32,
+        param1: u32,
+        param2: u32,
+        param3: u32,
+    ) {
+        self.queue.push(ScriptCommand::NotifyGroupLua {
+            group_id,
+            event_type,
+            param1,
+            param2,
+            param3,
+        });
     }
 
-    fn set_entity_server_global_value(&self, group_id: u32, config_id: u32, sgv_name: &str, value: u32) {
-        self.queue.push(ScriptCommand::SetEntityServerGlobalValue { group_id, config_id, sgv_name: sgv_name.to_string(), value });
+    fn set_entity_server_global_value(
+        &self,
+        group_id: u32,
+        config_id: u32,
+        sgv_name: &str,
+        value: u32,
+    ) {
+        self.queue.push(ScriptCommand::SetEntityServerGlobalValue {
+            group_id,
+            config_id,
+            sgv_name: sgv_name.to_string(),
+            value,
+        });
     }
 
     fn unlock_force(&self, force_id: u32) {
@@ -421,35 +543,46 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn kill_group_entity(&self, group_id: u32, kill_policy: u32) {
-        self.queue.push(ScriptCommand::KillGroupEntity { group_id, kill_policy });
+        self.queue.push(ScriptCommand::KillGroupEntity {
+            group_id,
+            kill_policy,
+        });
     }
 
     fn go_to_group_suite(&self, group_id: u32, suite_id: u32) {
         self.queue.push(ScriptCommand::GoToGroupSuite { group_id, suite_id });
     }
 
-    fn get_group_suite(&self, _group_id: u32) -> u32 {
-        // TODO: read from group registry
-        0
+    fn get_group_suite(&self, group_id: u32) -> u32 {
+        self.variable_store.get_suite(group_id)
     }
 
     fn set_group_variable_value_by_group(&self, group_id: u32, name: &str, value: i32) -> i32 {
-        self.variable_store.set_variable(group_id, name, value);
-        self.queue.push(ScriptCommand::SetGroupVariableValueByGroup {
-            group_id,
-            name: name.to_string(),
-            value,
-        });
+        let result = self.variable_store.set_variable(group_id, name, value);
+        if result != 0 {
+            return result;
+        }
+        self.queue
+            .push(ScriptCommand::SetGroupVariableValueByGroup {
+                group_id,
+                name: name.to_string(),
+                value,
+            });
         0
     }
 
     fn change_group_variable_value_by_group(&self, group_id: u32, name: &str, delta: i32) -> i32 {
-        self.variable_store.change_variable(group_id, name, delta);
-        self.queue.push(ScriptCommand::ChangeGroupVariableValueByGroup {
-            group_id,
-            name: name.to_string(),
-            delta,
-        });
+        let result = self.variable_store.change_variable(group_id, name, delta);
+        if result != 0 {
+            return result;
+        }
+        // 变量已同步更新，队列携带结果，避免再次累加。
+        self.queue
+            .push(ScriptCommand::SetGroupVariableValueByGroup {
+                group_id,
+                name: name.to_string(),
+                value: self.variable_store.get_variable(group_id, name),
+            });
         0
     }
 
@@ -486,20 +619,55 @@ impl ScriptLib for BevyScriptLib {
         self.queue.push(ScriptCommand::EndAllTimeAxis);
     }
 
-    fn trans_player_to_pos(&self, uid_list: Vec<u32>, pos: (f32, f32, f32), rot: (f32, f32, f32), scene_id: u32, radius: f32) {
-        self.queue.push(ScriptCommand::TransPlayerToPos { uid_list, pos, rot, scene_id, radius });
+    fn trans_player_to_pos(
+        &self,
+        uid_list: Vec<u32>,
+        pos: (f32, f32, f32),
+        rot: (f32, f32, f32),
+        scene_id: u32,
+        radius: f32,
+    ) {
+        self.queue.push(ScriptCommand::TransPlayerToPos {
+            uid_list,
+            pos,
+            rot,
+            scene_id,
+            radius,
+        });
     }
 
     fn set_group_gadget_state_by_config_id(&self, group_id: u32, config_id: u32, state: u32) {
-        self.queue.push(ScriptCommand::SetGroupGadgetStateByConfigId { group_id, config_id, state });
+        self.queue
+            .push(ScriptCommand::SetGroupGadgetStateByConfigId {
+                group_id,
+                config_id,
+                state,
+            });
     }
 
     fn set_gadget_enable_interact(&self, group_id: u32, config_id: u32, enable: bool) {
-        self.queue.push(ScriptCommand::SetGadgetEnableInteract { group_id, config_id, enable });
+        self.queue.push(ScriptCommand::SetGadgetEnableInteract {
+            group_id,
+            config_id,
+            enable,
+        });
     }
 
-    fn auto_monster_tide(&self, group_id: u32, source_id: u32, orders_config_id: Vec<u32>, tide_count: u32, scene_limit: u32) {
-        self.queue.push(ScriptCommand::AutoMonsterTide { group_id, source_id, orders_config_id, tide_count, scene_limit });
+    fn auto_monster_tide(
+        &self,
+        group_id: u32,
+        source_id: u32,
+        orders_config_id: Vec<u32>,
+        tide_count: u32,
+        scene_limit: u32,
+    ) {
+        self.queue.push(ScriptCommand::AutoMonsterTide {
+            group_id,
+            source_id,
+            orders_config_id,
+            tide_count,
+            scene_limit,
+        });
     }
 }
 

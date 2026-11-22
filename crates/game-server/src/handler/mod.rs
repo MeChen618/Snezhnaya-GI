@@ -2,7 +2,10 @@ mod get_player_token;
 mod gm_util;
 
 // use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, OnceLock,
+};
 
 use crate::handler::gm_util::execute_gm_cmd;
 use crate::{net::Connection, util, AppState};
@@ -25,6 +28,7 @@ enum InputItem {
     NewConnection(Connection),
     DropConnection(u32),
     Packet(u32, Box<[u8]>),
+    Shutdown(tokio::sync::oneshot::Sender<()>),
 }
 
 #[derive(Clone)]
@@ -36,9 +40,16 @@ pub struct Session {
     pub player_uid: OnceLock<u32>,
     pub xor_pad: OnceLock<MhyXorpad>,
     pub version: OnceLock<String>,
+    pub login_started: AtomicBool,
 }
 
 impl PacketHandler {
+    pub async fn shutdown(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if self.0.send(InputItem::Shutdown(tx)).is_ok() {
+            let _ = rx.await;
+        }
+    }
     pub fn new(state: &'static AppState) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(async move { packet_handler_loop(rx, state).await });
@@ -47,21 +58,31 @@ impl PacketHandler {
     }
 
     pub fn add_connection(&self, conn: Connection) {
-        self.0.send(InputItem::NewConnection(conn)).unwrap();
+        let _ = self.0.send(InputItem::NewConnection(conn));
     }
 
     pub fn remove_connection(&self, id: u32) {
-        self.0.send(InputItem::DropConnection(id)).unwrap();
+        let _ = self.0.send(InputItem::DropConnection(id));
     }
 
     pub fn enqueue(&self, conn_id: u32, buf: Box<[u8]>) {
-        self.0.send(InputItem::Packet(conn_id, buf)).unwrap();
+        let _ = self.0.send(InputItem::Packet(conn_id, buf));
     }
 }
 
 async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: &'static AppState) {
     while let Some(item) = rx.recv().await {
         match item {
+            InputItem::Shutdown(done) => {
+                for session in state.sessions.iter() {
+                    if let Some(uid) = session.player_uid.get() {
+                        state.logic_simulator.offline(*uid);
+                    }
+                }
+                state.sessions.clear();
+                let _ = done.send(());
+                break;
+            }
             InputItem::NewConnection(conn) => {
                 state.sessions.insert(
                     conn.conv,
@@ -71,6 +92,7 @@ async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: 
                         player_uid: OnceLock::new(),
                         xor_pad: OnceLock::new(),
                         version: Default::default(),
+                        login_started: AtomicBool::new(false),
                     }),
                 );
             }
@@ -84,7 +106,11 @@ async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: 
                 state.sessions.remove(&id);
             }
             InputItem::Packet(id, buf) => {
-                if let Some(session) = state.sessions.get(&id) {
+                if let Some(session) = state
+                    .sessions
+                    .get(&id)
+                    .map(|session| Arc::clone(session.value()))
+                {
                     if let Err(err) = handle_packet(state, &session, buf, id).await {
                         tracing::warn!("handle_packet(connection_id: {id}) failed, error: {err}");
                     }
@@ -144,7 +170,6 @@ async fn handle_packet(
     }
 
     if session.version.get().is_none() {
-        tracing::debug!("received packet: {}", hex::encode(&data));
         let version = snezhnaya_gi_proto::dy_parser::get_version(cmd_id);
         session.version.set(version).expect("TODO: panic message");
     }
@@ -158,8 +183,6 @@ async fn handle_packet(
         Some(message_name) => {
             match message_name.as_str() {
                 "GetPlayerTokenReq" => {
-                    tracing::debug!("GetPlayerTokenReq received packet: {}", hex::encode(&body));
-
                     match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
                         GetPlayerTokenReq,
                     >(version, "GetPlayerTokenReq", body)
@@ -196,10 +219,12 @@ async fn handle_packet(
                                         version
                                     );
 
-                                    snezhnaya_gi_message::PLAYER_VERSION
-                                        .get()
-                                        .unwrap()
-                                        .insert(uid, version.to_string());
+                                    if rsp.retcode == 0 {
+                                        snezhnaya_gi_message::PLAYER_VERSION
+                                            .get()
+                                            .unwrap()
+                                            .insert(uid, version.to_string());
+                                    }
 
                                     match snezhnaya_gi_proto::dy_parser::get_cmd_id_by_name_version(
                                         version,
@@ -230,7 +255,6 @@ async fn handle_packet(
                                                         &body,
                                                     );
 
-                                                    tracing::debug!("GetPlayerTokenRsp send packet: {}", hex::encode(&data));
 
                                                     util::xor_packet(
                                                         None,
@@ -264,7 +288,12 @@ async fn handle_packet(
                     {
                         None => {}
                         Some(request) => {
-                            let user_id = *session.player_uid.get().unwrap();
+                            let Some(&user_id) = session.player_uid.get() else {
+                                return Err(anyhow::anyhow!("login before token exchange"));
+                            };
+                            if session.login_started.swap(true, Ordering::AcqRel) {
+                                return Ok(());
+                            }
                             let user_session_id = session.connection.conv;
                             if request.client_version.contains("_") {
                                 cache_set_player_client_data_version(
@@ -358,7 +387,9 @@ async fn handle_packet(
                             );
                         }
                         Some(union_cmd) => {
-                            let user_id = *session.player_uid.get().unwrap();
+                            let Some(&user_id) = session.player_uid.get() else {
+                                return Err(anyhow::anyhow!("union packet before token exchange"));
+                            };
                             let user_session_id = session.connection.conv;
                             let head = PacketHead {
                                 user_id,
@@ -416,6 +447,26 @@ async fn player_login(state: &'static AppState, user_id: u32, user_session_id: u
 
     let Some(player_data) = state.db_handle.fetch(user_id).await else {
         tracing::error!("failed to get player data, uid: {user_id}");
+        let version = snezhnaya_gi_message::get_player_version!(&user_id);
+        let response = snezhnaya_gi_proto::normal::PlayerLoginRsp {
+            retcode: Retcode::RetLoginDbFail.into(),
+            ..Default::default()
+        };
+        if let (Some(id), Some(body)) = (
+            snezhnaya_gi_proto::dy_parser::get_cmd_id_by_name_version(&version, "PlayerLoginRsp"),
+            snezhnaya_gi_proto::dy_parser::encode_to_vec_by_name_version(
+                &version,
+                "PlayerLoginRsp",
+                &response,
+            ),
+        ) {
+            let _ = tx
+                .send((id, PacketHead::default(), body.into_boxed_slice()))
+                .await;
+        }
+        if let Some(session) = state.sessions.get(&conv) {
+            session.login_started.store(false, Ordering::Release);
+        }
         return;
     };
 
@@ -432,8 +483,12 @@ async fn packet_sink(
     conv: u32,
 ) {
     while let Some((cmd_id, head, body)) = rx.recv().await {
-        match state.sessions.get(&conv) {
-            None => {}
+        match state
+            .sessions
+            .get(&conv)
+            .map(|session| Arc::clone(session.value()))
+        {
+            None => break,
             Some(session) => {
                 let mut data = make_raw_packet(
                     cmd_id,

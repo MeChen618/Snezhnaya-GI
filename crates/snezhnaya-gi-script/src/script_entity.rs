@@ -253,6 +253,7 @@ pub fn spawn_group_entity(
     world_version_config: Res<WorldVersionConfig>,
     mut lua_trigger_events: MessageWriter<LuaTriggerEvent>,
     mut registry: NonSendMut<SceneGroupRegistry>,
+    variable_store: Res<crate::SharedVariableStore>,
 ) {
     let scene_group_collection_clone = std::sync::Arc::clone(
         snezhnaya_gi_data::scene::script_cache::SCENE_GROUP_COLLECTION
@@ -267,7 +268,11 @@ pub fn spawn_group_entity(
         // Handle suite refresh for quest RefreshGroupSuite exec
         if event.refresh_suite_id != 0 {
             if let Some(GroupLoadState::Loaded(rt)) = registry.groups.get_mut(&event.group_id) {
+                if event.refresh_suite_id as usize > rt.data.suites.len() { continue; }
                 rt.active_suites = vec![event.refresh_suite_id];
+                variable_store
+                    .0
+                    .set_suite(event.group_id, event.refresh_suite_id);
                 rt.recompute_active_triggers();
                 let initial_vars: std::collections::HashMap<String, i32> = rt
                     .data
@@ -296,7 +301,11 @@ pub fn spawn_group_entity(
             cache_get_scene_level(world_owner_uid.0, scene_group_template.base_info.scene_id)
                 .unwrap_or(1);
 
-        let suite_index = scene_group_template.init_config.suite;
+        let suite_index = if event.refresh_suite_id != 0 {
+            event.refresh_suite_id
+        } else {
+            scene_group_template.init_config.suite
+        };
         if suite_index < 1 || suite_index > scene_group_template.suites.len() as u32 {
             continue;
         }

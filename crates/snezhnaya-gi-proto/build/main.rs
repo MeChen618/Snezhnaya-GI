@@ -16,7 +16,9 @@ pub fn main() {
 
 fn process_proto_dir(dir: &str, includes: &[&str], target: &str) {
     let mut config = prost_build::Config::new();
-    config.out_dir(format!("gen/{}", target).as_str());
+    let output_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join(target);
+    fs::create_dir_all(&output_dir).unwrap();
+    config.out_dir(&output_dir);
     config.type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]");
     config.message_attribute(".", "#[serde(default)]");
     config.field_attribute(".", "#[serde(skip_serializing_if = \"crate::is_default\")]");
@@ -39,7 +41,7 @@ fn process_proto_dir(dir: &str, includes: &[&str], target: &str) {
 
     config.compile_protos(&*files, includes).unwrap();
     let path = format!("gen/{}/_.rs", target);
-    let content = fs::read_to_string(path.as_str()).expect("can not read");
+    let content = fs::read_to_string(output_dir.join("_.rs")).expect("can not read");
 
     let mut is_enum = false;
     let mut is_oneof = false;
@@ -105,5 +107,8 @@ fn process_proto_dir(dir: &str, includes: &[&str], target: &str) {
         output1.push_str("\n");
     }
 
-    fs::write(path, output1).expect("can not write");
+    // 内容没变时不重写，避免切换构建目标后重复编译整份协议。
+    if fs::read_to_string(&path).ok().as_ref() != Some(&output1) {
+        fs::write(path, output1).expect("can not write");
+    }
 }

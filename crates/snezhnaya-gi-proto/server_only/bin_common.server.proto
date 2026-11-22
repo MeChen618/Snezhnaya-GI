@@ -76,6 +76,9 @@ message ReliquaryBin {
     uint32 exp = 2;
     uint32 main_prop_id = 4;
     repeated uint32 append_prop_id_list = 5;
+    bool is_relic_starred = 10001;
+    repeated uint32 purchased_append_prop_id_list = 10002;
+    repeated uint32 definite_append_prop_id_list = 10003;
 }
 
 message WeaponBin {

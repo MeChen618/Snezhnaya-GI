@@ -23,13 +23,14 @@ pub fn start(
     handler: PacketHandler,
 ) -> mpsc::Sender<NetEvent> {
     let (tx, rx) = mpsc::channel(32);
-    let kcp = Kcp::new(
+    let mut kcp = Kcp::new(
         conv,
         token,
         time_util::unix_timestamp_ms(),
         false,
         UdpOutput { peer_addr, socket },
     );
+    kcp.set_nodelay(true, 20, 2, true);
 
     tokio::spawn(async move { kcp_loop(kcp, rx, handler).await });
     tx

@@ -210,6 +210,8 @@ pub struct ItemUse {
 #[serde(rename_all = "camelCase")]
 pub struct MaterialExcelConfig {
     pub id: u32,
+    #[serde(default)]
+    pub stack_limit: u32,
     pub item_type: ItemType,
     #[serde(default)]
     pub material_type: MaterialType,

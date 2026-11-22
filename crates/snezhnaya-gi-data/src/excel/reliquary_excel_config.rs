@@ -5,6 +5,8 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub struct ReliquaryExcelConfig {
     pub id: u32,
+    #[serde(default)]
+    pub dropable: bool,
     pub item_type: ItemType,
     pub equip_type: EquipType,
 

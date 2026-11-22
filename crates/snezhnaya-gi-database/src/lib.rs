@@ -8,6 +8,12 @@ use rocksdb::{DBCompressionType, Options, WriteBatch, DB};
 
 pub struct DbConnection(pub(crate) DB);
 
+pub fn flush(conn: &DbConnection) -> Result<(), DbError> {
+    conn.0.flush_wal(true)?;
+    conn.0.flush()?;
+    Ok(())
+}
+
 pub fn connect_to(settings: &DatabaseSettings) -> Result<DbConnection, DbError> {
     let mut opts = Options::default();
     opts.create_if_missing(true);
