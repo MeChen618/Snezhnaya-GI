@@ -8,18 +8,7 @@
 
 直接上游：[renyi89/nod-krai-gi](https://github.com/renyi89/nod-krai-gi)，基线提交 [`c218474a387ff43840f30f4c5863e34bc7fc6951`](https://github.com/renyi89/nod-krai-gi/commit/c218474a387ff43840f30f4c5863e34bc7fc6951)。上游源自 [mavuika-rs](https://git.xeondev.com/mavuika-rs/mavuika-rs)。保留原作者版权和 [AGPL-3.0 许可](LICENSE)。
 
-协议来自 [MeChen618/go_proto 的 GI 7.2.0](https://github.com/MeChen618/go_proto/tree/main/7.2.0)，已包含在 `assets/proto/7.2.0`。资源使用 [MeChen618/AstaPS-Resource](https://github.com/MeChen618/AstaPS-Resource)。资源与客户端不包含在本仓库内。
-
-## 7.2 适配
-
-- 加载完整 4,012 条 CmdID 记录，保留混淆名称；处理协议号冲突，优先使用已确认的请求。
-- 按字段选项执行 7.2 标量掩码，包括零值和嵌套消息；适配地图分层字段与 64 位 GUID。
-- 使用 7.2 的实体 ID 位移，修复进场 token 回包和空响应编码。
-- 启动前完成资源加载，兼容 AstaPS-Resource 的目录与稀疏字段，同场景锚点加入传送入口。
-- 修复 KCP 空闲时的 ACK／重传推进、大消息接收和截断包越界。
-- 保留新版能力条件对象，忽略空能力占位；隔离单个机关 Lua 错误，每个世界独立保存脚本上下文。
-
-这是对上游现有功能的版本适配，不代表任务、活动、联机和能力系统全部实现。7.2.50／7.2.51 测试服不属于这个配置。
+资源使用 [MeChen618/AstaPS-Resource](https://github.com/MeChen618/AstaPS-Resource)。资源与客户端不包含在本仓库内。
 
 ## 编译与资源
 

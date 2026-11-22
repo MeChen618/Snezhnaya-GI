@@ -8,18 +8,7 @@ An experimental Rust server targeting **Genshin Impact 7.2.0 release clients**. 
 
 Direct upstream: [renyi89/nod-krai-gi](https://github.com/renyi89/nod-krai-gi), based on commit [`c218474a387ff43840f30f4c5863e34bc7fc6951`](https://github.com/renyi89/nod-krai-gi/commit/c218474a387ff43840f30f4c5863e34bc7fc6951). The upstream derives from [mavuika-rs](https://git.xeondev.com/mavuika-rs/mavuika-rs). Original copyright notices and the [AGPL-3.0 license](LICENSE) are retained.
 
-Bundled wire definitions come from [MeChen618/go_proto, GI 7.2.0](https://github.com/MeChen618/go_proto/tree/main/7.2.0). Data comes from [MeChen618/AstaPS-Resource](https://github.com/MeChen618/AstaPS-Resource); neither resources nor the client are redistributed here.
-
-## Changes
-
-- All 4,012 CmdID records, including obfuscated names, with request priority for collisions.
-- Descriptor-driven scalar masks, including zero values and nested messages; map-layer aliases and exact 64-bit GUID serialization.
-- 7.2 entity IDs, scene tokens and encoded empty replies.
-- Resources loaded before accepting connections, AstaPS resource layout support, sparse fields and same-scene teleport entries.
-- KCP timer progression while idle, larger receive buffers and malformed packet bounds checks.
-- Conditional ability data retained, empty placeholders skipped, individual gadget script failures isolated and Lua contexts separated per world.
-
-This adapts upstream functionality; it does not implement every quest, activity, multiplayer or ability feature. The 7.2.50 / 7.2.51 beta protocol is not supported by this profile.
+Data comes from [MeChen618/AstaPS-Resource](https://github.com/MeChen618/AstaPS-Resource); neither resources nor the client are redistributed here.
 
 ## Build and run
 
