@@ -2910,6 +2910,7 @@ dependencies = [
  "common",
  "serde_json",
  "snezhnaya-gi-data",
+ "snezhnaya-gi-entity",
  "snezhnaya-gi-event",
  "snezhnaya-gi-inventory",
  "snezhnaya-gi-message",

@@ -733,6 +733,9 @@ message DungeonSerialBossChestBin {
 }
 
 message PlayerDungeonCompBin {
+  bool is_ley_line_challenge = 10001;
+  repeated uint64 original_avatar_guids = 10002;
+  uint64 original_avatar_guid = 10003;
   uint32 cur_dungeon_id = 1;
   fixed32 last_enter_time = 2;
   PlayerDungeonRecordBin record_bin = 5;
@@ -3979,9 +3982,17 @@ message ContentAuditBin {
 }
 
 message LeyLineChallengeBin {
+  map<uint32, LeyLineChallengeSeasonBin> records = 4;
   uint32 reliquary_id = 1;
   repeated uint32 favorite_reliquary_ids = 2;
   map<uint32, LeyLineChallengeTeamsBin> teams = 3;
 }
 message LeyLineChallengeTeamsBin { repeated LeyLineChallengeTeamBin team_list = 1; }
 message LeyLineChallengeTeamBin { repeated uint32 avatar_ids = 1; }
+
+message LeyLineChallengeSeasonBin { map<uint32, LeyLineChallengeRecordBin> records = 1; }
+message LeyLineChallengeRecordBin {
+  repeated uint32 round_time_ms = 1;
+  repeated LeyLineChallengeTeamBin teams = 2;
+  uint64 timestamp = 3;
+}

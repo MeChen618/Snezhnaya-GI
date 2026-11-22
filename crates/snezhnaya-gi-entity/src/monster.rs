@@ -11,6 +11,14 @@ use snezhnaya_gi_proto::server_only::VectorBin;
 use std::collections::HashMap;
 use tracing::debug;
 
+#[derive(Component, Default)]
+pub struct MonsterSpawnInfo {
+    pub ai_config_id: u32,
+    pub owner_entity_id: u32,
+    pub summoned_tag: u32,
+    pub values: Vec<snezhnaya_gi_proto::normal::AbilityScalarValueEntry>,
+}
+
 #[derive(Component)]
 pub struct MonsterEquipment(pub Vec<Entity>);
 
@@ -76,6 +84,7 @@ pub fn notify_appear_monster_entities(
             Option<&BlockId>,
             Option<&GroupId>,
             Option<&ConfigId>,
+            Option<&MonsterSpawnInfo>,
         ),
         Added<Visible>,
     >,
@@ -92,7 +101,7 @@ pub fn notify_appear_monster_entities(
             entity_list: monsters
                 .iter()
                 .map(
-                    |(monster_data, block_id, group_id, config_id)| SceneEntityInfo {
+                    |(monster_data, block_id, group_id, config_id, spawn)| SceneEntityInfo {
                         entity_type: ProtEntityType::ProtEntityMonster.into(),
                         entity_id: monster_data.entity_id.0,
                         name: String::new(),
@@ -122,7 +131,10 @@ pub fn notify_appear_monster_entities(
                         entity_client_data: Some(EntityClientData::default()),
                         entity_environment_info_list: Vec::with_capacity(0),
                         entity_authority_info: Some(EntityAuthorityInfo {
-                            ability_info: Some(AbilitySyncStateInfo::default()),
+                            ability_info: Some(AbilitySyncStateInfo {
+                                dynamic_value_map: spawn.map_or(vec![], |s| s.values.clone()),
+                                ..Default::default()
+                            }),
                             born_pos: Some(monster_data.transform.position.into()),
                             client_extra_info: Some(EntityClientExtraInfo {
                                 skill_anchor_position: Some(Vector::default()),
@@ -135,6 +147,9 @@ pub fn notify_appear_monster_entities(
                         server_buff_list: Vec::with_capacity(0),
                         entity: Some(scene_entity_info::Entity::Monster(SceneMonsterInfo {
                             monster_id: monster_data.monster_id.0,
+                            ai_config_id: spawn.map_or(0, |s| s.ai_config_id),
+                            owner_entity_id: spawn.map_or(0, |s| s.owner_entity_id),
+                            summoned_tag: spawn.map_or(0, |s| s.summoned_tag),
                             born_type: MonsterBornType::MonsterBornDefault as i32,
                             block_id: block_id.and_then(|t| Some(t.0)).unwrap_or_default(),
                             group_id: group_id.and_then(|t| Some(t.0)).unwrap_or_default(),

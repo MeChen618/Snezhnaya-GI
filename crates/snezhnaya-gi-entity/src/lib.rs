@@ -3,7 +3,7 @@ use bevy_ecs::prelude::*;
 use common::{
     EntityById, EntityCounter, FightProperties, LifeState, ProtocolEntityID, ToBeRemovedMarker,
 };
-use snezhnaya_gi_data::custom::{CombinedDrop, resolve_drop};
+use snezhnaya_gi_data::custom::{resolve_drop, CombinedDrop};
 use snezhnaya_gi_data::prop_type::FightPropType;
 use snezhnaya_gi_data::quest::quest_config::QuestContent;
 use snezhnaya_gi_data::scene::{EventType, LuaEvt};
@@ -49,6 +49,8 @@ use snezhnaya_gi_proto::normal::{
 pub enum EntitySystemSet {
     HandleEntitySpawn,
     HandleEntityIndexUpdate,
+    HandleEntityDeath,
+    HandleEntityCleanup,
 }
 
 pub struct EntityPlugin;
@@ -84,8 +86,8 @@ impl Plugin for EntityPlugin {
             .add_systems(
                 Last,
                 (
-                    update_entity_life_state,
-                    notify_disappear_entities,
+                    update_entity_life_state.in_set(EntitySystemSet::HandleEntityDeath),
+                    notify_disappear_entities.in_set(EntitySystemSet::HandleEntityCleanup),
                     despawn_monster_equipment,
                     remove_marked_entities,
                     avatar::notify_avatar_appearance_change,
@@ -315,6 +317,7 @@ fn update_entity_life_state(
                     });
 
                     monster_kill_events.write(MonsterKillEvent {
+                        entity_id: id.0,
                         group_id: group_id.0,
                         config_id: config_id.0,
                         monster_id: monster_id.map(|m| m.0).unwrap_or(0),

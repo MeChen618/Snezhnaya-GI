@@ -23,7 +23,7 @@ cargo build --locked --workspace -j 2
 cargo test --locked -p snezhnaya-gi-proto --lib -j 1
 ```
 
-首次资源准备会克隆并固定到已验证的 AstaPS-Resource 提交 `6cfecfb55f889f8e3b7156adb12809608db4f74b`。也可以复用本地资源：
+首次资源准备会克隆并固定到已验证的 AstaPS-Resource 提交 `f2800e32599f32cde76ae0b4b93ea30b75651e59`。也可以复用本地资源：
 
 ```bash
 python3 scripts/setup_resources.py /path/to/AstaPS-Resource

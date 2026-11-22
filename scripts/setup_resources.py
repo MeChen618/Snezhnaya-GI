@@ -8,7 +8,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_URL = "https://github.com/MeChen618/AstaPS-Resource.git"
-RESOURCE_REVISION = "6cfecfb55f889f8e3b7156adb12809608db4f74b"
+RESOURCE_REVISION = "f2800e32599f32cde76ae0b4b93ea30b75651e59"
 
 
 def read_json(path):
@@ -80,7 +80,7 @@ def main():
         subprocess.run(["git", "-C", str(source), "sparse-checkout", "set", "BinOutput", "ExcelBinOutput", "Scripts", "Server"], check=True)
         subprocess.run(["git", "-C", str(source), "fetch", "--depth", "1", "origin", args.revision], check=True)
         subprocess.run(["git", "-C", str(source), "checkout", "--detach", "FETCH_HEAD"], check=True)
-    for directory in ("BinOutput", "ExcelBinOutput"):
+    for directory in ("BinOutput", "ExcelBinOutput", "Server"):
         mount(source / directory, ROOT / "assets" / directory, args.copy)
     for directory in ("Scene", "Common", "Gadget", "Quest"):
         mount(source / "Scripts" / directory, ROOT / "assets/lua" / directory.lower(), args.copy)

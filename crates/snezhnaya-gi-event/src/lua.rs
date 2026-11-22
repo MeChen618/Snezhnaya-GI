@@ -92,6 +92,7 @@ pub struct ChallengeProgressEvent {
 
 #[derive(Message)]
 pub struct MonsterKillEvent {
+    pub entity_id: u32,
     pub group_id: u32,
     pub config_id: u32,
     pub monster_id: u32,

@@ -69,6 +69,12 @@ pub fn player_snapshot(player: &PlayerDataBin) -> std::borrow::Cow<'_, PlayerDat
         return std::borrow::Cow::Borrowed(player);
     };
     let mut snapshot = player.clone();
+    if dungeon.is_ley_line_challenge {
+        if let Some(avatars) = snapshot.avatar_bin.as_mut() {
+            avatars.cur_avatar_guid_list = dungeon.original_avatar_guids.clone();
+            avatars.cur_avatar_guid = dungeon.original_avatar_guid;
+        }
+    }
     // 副本里也保存背包和任务，重登位置回到副本入口。
     if let Some(scene) = snapshot.scene_bin.as_mut() {
         let valid_exit =

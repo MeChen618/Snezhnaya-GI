@@ -1,5 +1,6 @@
 use bevy_app::prelude::*;
 mod activity;
+mod ley_line;
 mod progression;
 use bevy_ecs::prelude::*;
 
@@ -19,20 +20,59 @@ impl Plugin for MiscPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneTime::default())
             .add_systems(PreStartup, (progression::login, activity::login).chain())
-            .add_systems(Update, (progression::handle, activity::handle))
+            .init_resource::<ley_line::Challenges>()
+            .add_systems(
+                Update,
+                (
+                    progression::handle,
+                    activity::handle,
+                    ley_line::handle,
+                    ley_line::apply_monster_scaling,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                Last,
+                (ley_line::update, ley_line::apply_monster_scaling)
+                    .chain()
+                    .after(snezhnaya_gi_entity::EntitySystemSet::HandleEntityDeath)
+                    .before(snezhnaya_gi_entity::EntitySystemSet::HandleEntityCleanup),
+            )
             .add_systems(PostUpdate, progression::observe)
             .add_systems(Startup, init_scene_time)
             .add_systems(PreUpdate, set_pause)
             .add_systems(PreUpdate, client_set_game_time)
-            .add_systems(First, sync_scene_time_on_scene_init_finish)
-            .add_systems(First, sync_scene_time_on_enter_scene_done);
+            .add_systems(
+                First,
+                (
+                    update_scene_clock,
+                    sync_scene_time_on_scene_init_finish,
+                    sync_scene_time_on_enter_scene_done,
+                )
+                    .chain(),
+            );
     }
 }
 
 #[derive(Resource, Default)]
 pub struct SceneTime {
     pub scene_time: u64,
+    started_at: Option<std::time::Instant>,
     pub game_time: u32,
+}
+
+impl SceneTime {
+    pub fn elapsed_ms(&self) -> u64 {
+        self.started_at
+            .map_or(0, |start| start.elapsed().as_millis() as u64)
+    }
+}
+fn update_scene_clock(mut time: ResMut<SceneTime>) {
+    time.started_at.get_or_insert_with(std::time::Instant::now);
+    time.scene_time = time.elapsed_ms();
+}
+pub fn next_wakeup(world: &World) -> Option<std::time::Instant> {
+    ley_line::next_wakeup(world)
 }
 
 pub fn init_scene_time(mut time: ResMut<SceneTime>) {

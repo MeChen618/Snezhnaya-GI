@@ -1,4 +1,5 @@
 pub mod common;
+pub mod ley_line_challenge;
 pub mod production;
 pub mod progression;
 
@@ -101,6 +102,7 @@ macro_rules! excel_loader {
 
             production::ProductionConfig::load(excel_bin_output_path)?;
             progression::ProgressionConfig::load(excel_bin_output_path)?;
+            ley_line_challenge::LeyLineConfig::load(excel_bin_output_path)?;
             Ok(())
         }
 

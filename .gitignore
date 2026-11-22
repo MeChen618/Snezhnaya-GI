@@ -23,6 +23,7 @@ target
 .vscode/
 /assets/BinOutput
 /assets/ExcelBinOutput
+/assets/Server
 /assets/lua
 assets/custom/*
 !assets/custom/GachaBanners.json

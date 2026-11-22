@@ -129,6 +129,9 @@ impl ChallengeSeason {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ChallengeLevel {
+    pub revise_level: u32,
+    #[serde(rename = "PFCPNCCOAPB")]
+    pub elite_times: Vec<u32>,
     pub id: u32,
     pub watcher_list: Vec<u32>,
     pub level_config_list: Vec<u32>,

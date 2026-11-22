@@ -23,7 +23,7 @@ fn number(value: &Value, key: &str) -> u32 {
         .and_then(|n| u32::try_from(n).ok())
         .unwrap_or(0)
 }
-fn active_season(time: u32) -> Option<&'static ChallengeSeason> {
+pub(super) fn active_season(time: u32) -> Option<&'static ChallengeSeason> {
     let cfg = ProgressionConfig::get();
     cfg.challenge_seasons.values().rev().find(|s| {
         s.begin().is_some_and(|b| b <= time)
@@ -165,7 +165,7 @@ fn refresh(player: &mut b::PlayerDataBin, a: &ActivitySettings) {
         }
     }
 }
-fn ley_state(player: &b::PlayerDataBin) -> Option<&b::LeyLineChallengeBin> {
+pub(super) fn ley_state(player: &b::PlayerDataBin) -> Option<&b::LeyLineChallengeBin> {
     player
         .activity_bin
         .as_ref()?
@@ -174,7 +174,7 @@ fn ley_state(player: &b::PlayerDataBin) -> Option<&b::LeyLineChallengeBin> {
         .ley_line_challenge
         .as_ref()
 }
-fn ley_state_mut(player: &mut b::PlayerDataBin) -> &mut b::LeyLineChallengeBin {
+pub(super) fn ley_state_mut(player: &mut b::PlayerDataBin) -> &mut b::LeyLineChallengeBin {
     player
         .activity_bin
         .get_or_insert_with(Default::default)
@@ -192,8 +192,8 @@ fn selected(player: &b::PlayerDataBin) -> u32 {
         .or_else(|| choices.iter().min().copied())
         .unwrap_or(0)
 }
-fn ley_data(player: &b::PlayerDataBin) -> Value {
-    json!({"activity_schedule_id":active_season(now()).map_or(0,|s|s.schedule_id),"reliquary_id":selected(player),"favorite_reliquary_id_list":ley_state(player).map_or(vec![],|s|s.favorite_reliquary_ids.clone())})
+pub(super) fn ley_data(player: &b::PlayerDataBin) -> Value {
+    json!({"DNIAFBOHIPC":super::ley_line::max_completed(player),"GLKEFHEKCPO":super::ley_line::max_completed(player),"FODFAOBLHEA":ley_state(player).into_iter().flat_map(|p|p.records.iter()).flat_map(|(&schedule,r)|r.records.keys().filter_map(move|&difficulty|super::ley_line::record_packet(player,schedule,difficulty))).collect::<Vec<_>>(),"activity_schedule_id":active_season(now()).map_or(0,|s|s.schedule_id),"reliquary_id":selected(player),"favorite_reliquary_id_list":ley_state(player).map_or(vec![],|s|s.favorite_reliquary_ids.clone())})
 }
 fn info(player: &b::PlayerDataBin, a: &ActivitySettings) -> Value {
     let state = &player.activity_bin.as_ref().unwrap().activity_bin_map[&a.activity_id];
@@ -204,6 +204,7 @@ fn info(player: &b::PlayerDataBin, a: &ActivitySettings) -> Value {
         data["first_day_start_time"] = json!(season.first_day().unwrap_or(a.begin_time));
         let selections:Vec<_>=ley_state(player).into_iter().flat_map(|s|s.teams.iter()).flat_map(|(&difficulty,teams)|teams.team_list.iter().enumerate().map(move|(round,team)|json!({"difficulty":difficulty,"CIPECILEKHK":round+1,"avatar_id_list":team.avatar_ids}))).collect();
         data["ley_line_challenge_detail_info"] = json!({"HGEEJFIBCLH":ley_data(player),"OFBPKKNJJFN":true,"NDBOPNDMGNM":true,"HNBNPOEHDAA":cn_end(season).to_string(),"difficulty_info_list":(1..=6).map(|d|json!({"difficulty":d})).collect::<Vec<_>>(),"LDCNHAOBINH":selections});
+        data["ley_line_challenge_detail_info"]["difficulty_info_list"]=json!((1..=6).map(|d|json!({"difficulty":d,"DNIJJMFOJLI":ley_state(player).and_then(|l|l.records.get(&a.schedule_id)).and_then(|r|r.records.get(&d)).map_or(vec![],|r|r.round_time_ms.iter().map(|ms|ms.div_ceil(1000)).collect())})).collect::<Vec<_>>());
     }
     data
 }
@@ -229,7 +230,11 @@ pub fn login(mut players: ResMut<Players>, output: Res<MessageOutput>) {
             refresh(player, a);
         }
         output.send_json(player.uid,"ActivityScheduleInfoNotify",json!({"activity_schedule_list":schedules.iter().map(|a|json!({"activity_id":a.activity_id,"schedule_id":a.schedule_id,"begin_time":a.begin_time,"end_time":a.end_time,"is_open":is_open(a)})).collect::<Vec<_>>() }));
-        output.send_json(player.uid,"LeyLineChallengeDataNotify",json!({"data":{"activity_schedule_id":active_season(now()).map_or(0,|s|s.schedule_id),"reliquary_id":selected(player)}}));
+        output.send_json(
+            player.uid,
+            "LeyLineChallengeDataNotify",
+            json!({"data":ley_data(player)}),
+        );
     }
 }
 fn claim(
@@ -279,6 +284,14 @@ fn save_teams(player: &mut b::PlayerDataBin, request: &Value) -> Result<(), Retc
     if !(1..=6).contains(&difficulty) {
         return Err(Retcode::RetFail);
     }
+    let saved = parse_teams(player, request)?;
+    ley_state_mut(player).teams.insert(difficulty, saved);
+    Ok(())
+}
+pub(super) fn parse_teams(
+    player: &b::PlayerDataBin,
+    request: &Value,
+) -> Result<b::LeyLineChallengeTeamsBin, Retcode> {
     let teams = request
         .get("team_list")
         .and_then(Value::as_array)
@@ -315,11 +328,9 @@ fn save_teams(player: &mut b::PlayerDataBin, request: &Value) -> Result<(), Retc
         saved.push(b::LeyLineChallengeTeamBin { avatar_ids: ids });
     }
     saved.resize_with(3, Default::default);
-    ley_state_mut(player)
-        .teams
-        .insert(difficulty, b::LeyLineChallengeTeamsBin { team_list: saved });
-    Ok(())
+    Ok(b::LeyLineChallengeTeamsBin { team_list: saved })
 }
+
 pub fn handle(
     mut events: MessageReader<ClientMessageEvent>,
     mut players: ResMut<Players>,
@@ -333,8 +344,13 @@ pub fn handle(
                 | "GetActivityScheduleReq"
                 | "ActivityTakeWatcherRewardReq"
                 | "ActivityPlayOpenAnimNotify"
-        ) && !name.starts_with("LeyLineChallenge")
-        {
+                | "LeyLineChallengeGetDataReq"
+                | "LeyLineChallengeGetReliquaryListReq"
+                | "LeyLineChallengeSelectReliquaryReq"
+                | "LeyLineChallengeSetFavoriteReliquaryReq"
+                | "LeyLineChallengeSetTeamReq"
+                | "LeyLineChallengeGetPopularAvatarReq"
+        ) {
             continue;
         }
         let Some(player) = players.get_mut(message.sender_uid()) else {
@@ -457,23 +473,6 @@ pub fn handle(
                 "LeyLineChallengeGetPopularAvatarRsp",
                 json!({"GLKEFHEKCPO":number(&request,"glkefhekcpo")}),
             ),
-            // 现有场景 Lua 没有刷怪及结算逻辑，不能把空场景作为成功开战。
-            "LeyLineChallengeEnterReq"
-            | "LeyLineChallengeStartReq"
-            | "LeyLineChallengeRetryReq"
-            | "LeyLineChallengeSetRoundTeamReq"
-            | "LeyLineChallengeTakeRewardReq" => {
-                let rsp = name.replace("Req", "Rsp");
-                let code = if active_season(now()).is_none() {
-                    Retcode::RetActivityClose
-                } else {
-                    Retcode::RetNotFoundConfig
-                };
-                output.send_json(player.uid, &rsp, json!({"retcode":i32::from(code)}));
-            }
-            "LeyLineChallengeTerminateReq" => {
-                output.send_json(player.uid, "LeyLineChallengeTerminateRsp", json!({}))
-            }
             _ => {}
         }
     }

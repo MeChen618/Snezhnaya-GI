@@ -203,6 +203,9 @@ pub fn player_enter_dungeon(
                                 quit_scene_id: pre_data.quit_scene_id,
                                 quit_pos: pre_data.quit_pos,
                                 quit_rot: pre_data.quit_rot,
+                                is_ley_line_challenge: pre_data.is_ley_line_challenge,
+                                original_avatar_guids: pre_data.original_avatar_guids.clone(),
+                                original_avatar_guid: pre_data.original_avatar_guid,
                                 ..Default::default()
                             });
                         }

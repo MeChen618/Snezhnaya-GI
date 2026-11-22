@@ -13860,6 +13860,17 @@ pub struct DungeonSerialBossChestBin {
 #[serde(default)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlayerDungeonCompBin {
+    #[prost(bool, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub is_ley_line_challenge: bool,
+    #[serde(with="crate::u64_repeated_string")]
+    #[prost(uint64, repeated, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub original_avatar_guids: ::prost::alloc::vec::Vec<u64>,
+    #[serde(with="crate::u64_string")]
+    #[prost(uint64, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub original_avatar_guid: u64,
     #[prost(uint32, tag = "1")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub cur_dungeon_id: u32,
@@ -21849,6 +21860,9 @@ pub struct ContentAuditBin {
 #[serde(default)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeyLineChallengeBin {
+    #[prost(map = "uint32, message", tag = "4")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub records: ::std::collections::HashMap<u32, LeyLineChallengeSeasonBin>,
     #[prost(uint32, tag = "1")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub reliquary_id: u32,
@@ -21874,4 +21888,27 @@ pub struct LeyLineChallengeTeamBin {
     #[prost(uint32, repeated, tag = "1")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub avatar_ids: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeyLineChallengeSeasonBin {
+    #[prost(map = "uint32, message", tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub records: ::std::collections::HashMap<u32, LeyLineChallengeRecordBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeyLineChallengeRecordBin {
+    #[prost(uint32, repeated, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub round_time_ms: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub teams: ::prost::alloc::vec::Vec<LeyLineChallengeTeamBin>,
+    #[serde(with="crate::u64_string")]
+    #[prost(uint64, tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub timestamp: u64,
 }
