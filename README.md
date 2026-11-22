@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-基于 Rust 的原神 **7.2.0 正式服**实验性服务端。包含 Dispatch 和游戏服，账号登录接已有的 AstaPS／hoyo-sdk 服务。
+基于 Rust 的某二次元动漫游戏正式服实验性服务端。包含 Dispatch 和游戏服，账号登录接已有的 AstaPS
 
 ## 上游与许可
 
