@@ -289,11 +289,12 @@ pub fn handle_player_move_for_region_entry(
                     group_id: *group_id,
                     event_type: EventType::EventLeaveRegion,
                     evt: snezhnaya_gi_data::scene::LuaEvt {
-                        param1: *region_config_id,
-                        param2: *region_config_id,
+                        param1: i64::from(*region_config_id),
+                        param2: i64::from(*region_config_id),
                         param3: 0,
                         source_eid: 0,
                         target_eid: 0,
+                        ..Default::default()
                     },
                 });
             }
@@ -312,11 +313,12 @@ pub fn handle_player_move_for_region_entry(
                     group_id: *group_id,
                     event_type: EventType::EventEnterRegion,
                     evt: snezhnaya_gi_data::scene::LuaEvt {
-                        param1: *region_config_id,
-                        param2: *region_config_id,
+                        param1: i64::from(*region_config_id),
+                        param2: i64::from(*region_config_id),
                         param3: 0,
                         source_eid: 0,
                         target_eid: 0,
+                        ..Default::default()
                     },
                 });
             }

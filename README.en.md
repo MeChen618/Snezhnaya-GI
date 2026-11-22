@@ -34,7 +34,7 @@ Run from the repository root. First launch creates `game-server.toml` and `dispa
 | Dispatch | `127.0.0.1:21001`, TCP/HTTP |
 | Game | `127.0.0.1:21002`, UDP/KCP |
 
-Configure the existing SDK / client to use this Dispatch URL; keep account endpoints on the existing login service. Account UIDs must remain stable. Account storage and game saves are separate. Upstream does not validate SDK tokens online; use a trusted test network.
+Configure the existing SDK / client to use this Dispatch URL; keep account endpoints on the existing login service. Account UIDs must remain stable. Account storage and game saves are separate. Configure `[sdk]` for game-token verification: AstaPS uses `provider = "astaps"`, its Dispatch WebSocket URL and matching `server.dispatch.dispatchKey` / Base64 `encryptionKey`; hoyo-sdk uses `provider = "hoyo_sdk"` and the full `/hk4e_cn/mdk/shield/api/verify` URL. AstaPS keys may also come from `SNEZHNAYA_SDK_DISPATCH_KEY` and `SNEZHNAYA_SDK_ENCRYPTION_KEY`. Invalid tokens do not create player accounts.
 
 For remote clients, update the TOML bind addresses and `dispatch_url`, `gateserver_ip` and `gateserver_port` in `assets/region/region_list.json`. Match HTTP/HTTPS and certificates to your existing proxy. The bundled upstream test keys must match the client's region/session setup. `hot_fix_data` is empty by default; resource download requires URLs, versions and hashes matching the exact client build.
 
@@ -42,12 +42,11 @@ Dispatch provides `/health`, `/query_region_list` and `/query_cur_region`. The l
 
 ## Validation
 
-Regression tests cover native mask formulas, zero values, scene tokens, map-layer lists, 64-bit GUIDs, signed 64-bit properties, integer-key maps inside oneofs and malformed packets. To exercise a running local game server:
+Protocol tests cover native masks, scene tokens, map layers, GUIDs, signed properties and malformed packets. Resource validation reads the actual assets. Network smoke and load tools are maintained locally.
 
 ```bash
-cargo run --locked -p snezhnaya-gi-game-server --example protocol_smoke
+cargo test --locked -p snezhnaya-gi-proto --lib
+./target/release/snezhnaya-gi-game-server --check-resources
 ```
-
-The synthetic client creates a test character, performs UDP/KCP and RSA/session negotiation, logs in, enters a scene and requests map data. Optionally append a game address and set a numeric `SMOKE_ACCOUNT_UID`. This does not replace testing on a real Android client.
 
 The [upstream command handbook](handbook.md) is retained.

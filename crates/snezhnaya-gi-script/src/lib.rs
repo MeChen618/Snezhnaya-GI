@@ -6,9 +6,10 @@ mod script_lib;
 mod script_lib_handle;
 mod script_load;
 mod script_lua_vm;
+mod script_timer;
 
 use crate::challenge_manager::{
-    challenge_timer_system, ChallengeManager, ChallengeTimer, ChallengeUpdateResult,
+    ChallengeManager, ChallengeTimer, ChallengeUpdateResult, challenge_timer_system,
 };
 use crate::challenge_notify::{
     handle_challenge_finish_event, handle_challenge_progress_event, handle_challenge_start_event,
@@ -18,11 +19,10 @@ use crate::script_entity::{
     spawn_suite_entities,
 };
 use crate::script_group_manager::{
-    handle_player_move_for_group_loading, handle_player_move_for_region_entry, GroupLoadManager,
+    GroupLoadManager, handle_player_move_for_group_loading, handle_player_move_for_region_entry,
 };
 use crate::script_lib::{
-    call_lua_on_be_hurt, call_lua_on_client_execute_req, call_lua_trigger_action,
-    call_lua_trigger_condition, BevyScriptLib, GroupVariableStore,
+    BevyScriptLib, GroupVariableStore, call_lua_on_be_hurt, call_lua_on_client_execute_req,
 };
 use crate::script_load::{GroupLoadState, SceneGroupRuntime};
 use crate::script_lua_vm::LuaRuntime;
@@ -31,12 +31,13 @@ use bevy_ecs::prelude::*;
 use common::player_cache::cache_get_scene_level;
 use crossbeam_queue::SegQueue;
 use mlua::Function;
+use script_timer::{ScriptTimers, script_timer_system};
 use snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache;
 use snezhnaya_gi_data::scene::{EventType, GadgetState, LuaEvt, ScriptCommand};
 use snezhnaya_gi_entity::common::{
     BlockId, ConfigId, EntityCounter, GroupId, ProtocolEntityID, Visible,
 };
-use snezhnaya_gi_entity::gadget::{spawn_gadget_entity, State};
+use snezhnaya_gi_entity::gadget::{State, spawn_gadget_entity};
 use snezhnaya_gi_entity::monster::spawn_monster_entity;
 use snezhnaya_gi_event::entity::{GadgetStateChangeEvent, SetWorktopOptionsEvent};
 use snezhnaya_gi_event::lua::{
@@ -48,13 +49,60 @@ use snezhnaya_gi_event::lua::{
 use snezhnaya_gi_event::quest::QuestContentProgressEvent;
 use snezhnaya_gi_event::scene::{WorldOwnerUID, WorldVersionConfig};
 use snezhnaya_gi_message::output::MessageOutput;
-use snezhnaya_gi_proto::normal::scene_gadget_info::Content;
 use snezhnaya_gi_proto::normal::GatherGadgetInfo;
+use snezhnaya_gi_proto::normal::scene_gadget_info::Content;
 use snezhnaya_gi_proto::server_only::VectorBin;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct ScriptPlugin;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+enum ScriptSet {
+    Collect,
+    Groups,
+    Entities,
+    Timers,
+    Triggers,
+}
+
+#[derive(Resource, Default)]
+struct ScriptActivity {
+    follow_up: Option<Instant>,
+}
+
+// Lua 动作产生的命令留到下一轮处理，不在一次更新中递归执行。
+fn track_script_activity(
+    queue: Res<ScriptCommandQueue>,
+    mut commands: MessageReader<ScriptCommandEvent>,
+    mut events: MessageReader<LuaTriggerEvent>,
+    mut activity: ResMut<ScriptActivity>,
+) {
+    let command_count = commands.read().count();
+    let event_count = events.read().count();
+    activity.follow_up = if !queue.0.is_empty() || command_count > 0 || event_count > 0 {
+        Some(Instant::now() + Duration::from_millis(10))
+    } else {
+        None
+    };
+}
+
+pub fn next_script_wakeup(world: &World) -> Option<Instant> {
+    let timer = world
+        .get_resource::<ScriptTimers>()
+        .and_then(ScriptTimers::next_deadline);
+    let challenge = world
+        .get_resource::<ChallengeManager>()
+        .and_then(|manager| {
+            (!manager.active_challenges.is_empty())
+                .then(|| world.resource::<ChallengeTimer>().next_deadline())
+        });
+    let pending = world
+        .get_resource::<ScriptActivity>()
+        .and_then(|activity| activity.follow_up);
+    [timer, challenge, pending].into_iter().flatten().min()
+}
 
 #[derive(Resource)]
 pub struct ScriptCommandQueue(pub Arc<SegQueue<ScriptCommand>>);
@@ -94,32 +142,118 @@ impl Plugin for ScriptPlugin {
             .insert_resource(GroupLoadManager::default())
             .insert_resource(ChallengeManager::new())
             .insert_resource(ChallengeTimer::default())
-            .add_systems(Update, script_command_system)
-            .add_systems(Update, handle_script_command_group_event)
-            .add_systems(Update, handle_script_command_entity_event)
-            .add_systems(Update, handle_script_command_notify_event)
-            .add_systems(Update, handle_script_command_challenge_event)
-            .add_systems(Update, handle_script_command_quest_event)
-            .add_systems(Update, lua_trigger_event_system)
-            .add_systems(Update, gadget_lua_on_client_execute_req)
-            .add_systems(Update, gadget_lua_on_be_hurt)
-            .add_systems(Update, set_worktop_options_event)
-            .add_systems(Update, set_gadget_state_event)
-            .add_systems(Update, handle_player_move_for_group_loading)
-            .add_systems(Update, handle_player_move_for_region_entry)
-            .add_systems(Update, spawn_group_entity)
-            .add_systems(Update, despawn_group_entity)
-            .add_systems(Update, spawn_suite_entities)
-            .add_systems(Update, despawn_suite_entities)
-            .add_systems(Update, refresh_group_entity)
-            .add_systems(Update, challenge_timer_system)
-            .add_systems(Update, handle_challenge_start_event)
-            .add_systems(Update, handle_challenge_finish_event)
-            .add_systems(Update, handle_challenge_progress_event)
-            .add_systems(Update, handle_monster_kill_challenge_event)
-            .add_systems(Update, handle_monster_kill_quest_event)
-            .add_systems(Update, handle_gadget_state_change_quest_event)
-            .add_systems(Update, handle_gadget_interact_quest_event);
+            .insert_resource(ScriptTimers::default())
+            .insert_resource(ScriptActivity::default())
+            .configure_sets(
+                Update,
+                (
+                    ScriptSet::Collect,
+                    ScriptSet::Groups,
+                    ScriptSet::Entities,
+                    ScriptSet::Timers,
+                    ScriptSet::Triggers,
+                )
+                    .chain(),
+            )
+            .add_systems(Update, script_command_system.in_set(ScriptSet::Collect))
+            .add_systems(
+                Update,
+                handle_script_command_group_event.in_set(ScriptSet::Groups),
+            )
+            .add_systems(
+                Update,
+                handle_script_command_entity_event.in_set(ScriptSet::Entities),
+            )
+            .add_systems(
+                Update,
+                handle_script_command_notify_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_script_command_challenge_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_script_command_quest_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(Update, lua_trigger_event_system.in_set(ScriptSet::Triggers))
+            .add_systems(
+                Update,
+                gadget_lua_on_client_execute_req.in_set(ScriptSet::Timers),
+            )
+            .add_systems(Update, gadget_lua_on_be_hurt.in_set(ScriptSet::Timers))
+            .add_systems(Update, set_worktop_options_event.in_set(ScriptSet::Timers))
+            .add_systems(Update, set_gadget_state_event.in_set(ScriptSet::Timers))
+            .add_systems(
+                Update,
+                handle_player_move_for_group_loading.in_set(ScriptSet::Collect),
+            )
+            .add_systems(
+                Update,
+                handle_player_move_for_region_entry.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                spawn_group_entity
+                    .in_set(ScriptSet::Entities)
+                    .after(handle_script_command_entity_event),
+            )
+            .add_systems(
+                Update,
+                despawn_group_entity
+                    .in_set(ScriptSet::Entities)
+                    .before(spawn_group_entity),
+            )
+            .add_systems(
+                Update,
+                spawn_suite_entities
+                    .in_set(ScriptSet::Entities)
+                    .after(spawn_group_entity)
+                    .after(despawn_suite_entities)
+                    .after(refresh_group_entity),
+            )
+            .add_systems(Update, despawn_suite_entities.in_set(ScriptSet::Entities))
+            .add_systems(Update, refresh_group_entity.in_set(ScriptSet::Entities))
+            .add_systems(
+                Update,
+                challenge_timer_system
+                    .in_set(ScriptSet::Timers)
+                    .after(handle_script_command_challenge_event)
+                    .after(handle_monster_kill_challenge_event),
+            )
+            .add_systems(
+                Update,
+                handle_challenge_start_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_challenge_finish_event
+                    .in_set(ScriptSet::Timers)
+                    .after(challenge_timer_system)
+                    .after(handle_script_command_challenge_event),
+            )
+            .add_systems(
+                Update,
+                handle_challenge_progress_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_monster_kill_challenge_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_monster_kill_quest_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_gadget_state_change_quest_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(
+                Update,
+                handle_gadget_interact_quest_event.in_set(ScriptSet::Timers),
+            )
+            .add_systems(Update, script_timer_system.in_set(ScriptSet::Timers))
+            .add_systems(Last, track_script_activity);
     }
 }
 
@@ -249,11 +383,12 @@ pub fn handle_script_command_entity_event(
                     group_id: *group_id,
                     event_type: EventType::EventGadgetCreate,
                     evt: LuaEvt {
-                        param1: gadget.config_id,
-                        param2: gadget.config_id,
+                        param1: i64::from(gadget.config_id),
+                        param2: i64::from(gadget.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
 
@@ -349,11 +484,12 @@ pub fn handle_script_command_entity_event(
                     group_id: *group_id,
                     event_type: EventType::EventAnyMonsterLive,
                     evt: LuaEvt {
-                        param1: monster.config_id,
-                        param2: monster.config_id,
+                        param1: i64::from(monster.config_id),
+                        param2: i64::from(monster.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
 
@@ -501,7 +637,7 @@ pub fn handle_script_command_notify_event(
                     group_id: 0,
                     event_type: EventType::EventDungeonSettle,
                     evt: LuaEvt {
-                        param1: result_param,
+                        param1: i64::from(result_param),
                         ..Default::default()
                     },
                 });
@@ -613,48 +749,6 @@ pub fn handle_script_command_notify_event(
                 tracing::debug!("[Script] [LockForce] force={}", force_id);
             }
 
-            ScriptCommand::CreateGroupTimerEvent {
-                group_id,
-                source,
-                time,
-            } => {
-                tracing::debug!(
-                    "[Script] [CreateGroupTimerEvent] group={} source={} time={}",
-                    group_id,
-                    source,
-                    time
-                );
-            }
-
-            ScriptCommand::CancelGroupTimerEvent { group_id, source } => {
-                tracing::debug!(
-                    "[Script] [CancelGroupTimerEvent] group={} source={}",
-                    group_id,
-                    source
-                );
-            }
-
-            ScriptCommand::InitTimeAxis {
-                identifier,
-                delays,
-                should_loop,
-            } => {
-                tracing::debug!(
-                    "[Script] [InitTimeAxis] id={} delays={:?} loop={}",
-                    identifier,
-                    delays,
-                    should_loop
-                );
-            }
-
-            ScriptCommand::EndTimeAxis { identifier } => {
-                tracing::debug!("[Script] [EndTimeAxis] id={}", identifier);
-            }
-
-            ScriptCommand::EndAllTimeAxis => {
-                tracing::debug!("[Script] [EndAllTimeAxis]");
-            }
-
             _ => {}
         }
     }
@@ -664,7 +758,7 @@ fn handle_script_command_group_event(
     mut ev_reader: MessageReader<ScriptCommandEvent>,
     mut registry: NonSendMut<SceneGroupRegistry>,
     variable_store: Res<SharedVariableStore>,
-    mut lua_vm: ResMut<LuaRuntime>,
+    lua_vm: Res<LuaRuntime>,
     mut spawn_group_entity_event: MessageWriter<SpawnGroupEntityEvent>,
     mut despawn_group_entity_event: MessageWriter<DespawnGroupEntityEvent>,
     mut lua_trigger_events: MessageWriter<LuaTriggerEvent>,
@@ -685,6 +779,9 @@ fn handle_script_command_group_event(
                 tracing::debug!("[Script] [AddExtraGroupSuite] context:{:#?}", ctx);
 
                 if let Some(GroupLoadState::Loaded(rt)) = registry.groups.get_mut(&group_id) {
+                    if *suite_id == 0 || *suite_id as usize > rt.data.suites.len() {
+                        continue;
+                    }
                     if rt.active_suites.contains(&suite_id) {
                         tracing::debug!(
                             "[Script] [AddExtraGroupSuite] suite {} already active in group {}",
@@ -754,7 +851,7 @@ fn handle_script_command_group_event(
                         *block_id,
                         *group_id,
                         world_owner.0,
-                        &mut lua_vm,
+                        &lua_vm.lua,
                     );
 
                     match runtime {
@@ -787,22 +884,25 @@ fn handle_script_command_group_event(
             ScriptCommand::UnloadGroup { group_id } => {
                 tracing::debug!("[Extra] [UnloadGroup] context:{}", group_id);
 
-                lua_trigger_events.write(LuaTriggerEvent {
-                    group_id: *group_id,
-                    event_type: EventType::EventGroupWillUnload,
-                    evt: LuaEvt {
-                        param1: 0,
-                        param2: 0,
-                        param3: 0,
-                        source_eid: 0,
-                        target_eid: 0,
-                    },
-                });
+                if let Some(GroupLoadState::Loaded(runtime)) = registry.groups.get_mut(group_id) {
+                    runtime.dispatch(
+                        &EventType::EventGroupWillUnload,
+                        &LuaEvt::default(),
+                        &variable_store.0,
+                    );
+                }
                 despawn_group_entity_event.write(DespawnGroupEntityEvent {
                     group_id: *group_id,
                 });
                 variable_store.0.remove_group(*group_id);
-                registry.groups.remove(&group_id);
+                if let Some(GroupLoadState::Loaded(runtime)) = registry.groups.remove(&group_id) {
+                    let script_name =
+                        format!("scene{}_group{}", runtime.context.scene_id, group_id);
+                    // 卸载组时移除环境，避免跑图后一直持有旧脚本和闭包。
+                    let _ = lua_vm.lua.globals().raw_remove(script_name);
+                    drop(runtime);
+                    let _ = lua_vm.lua.gc_step_kbytes(64);
+                }
 
                 let removed_challenges = challenge_manager.remove_group_challenges(*group_id);
                 for finish_event in removed_challenges {
@@ -810,11 +910,12 @@ fn handle_script_command_group_event(
                         group_id: finish_event.group_id,
                         event_type: EventType::EventChallengeFail,
                         evt: LuaEvt {
-                            param1: finish_event.challenge_index,
-                            param2: finish_event.challenge_id,
+                            param1: i64::from(finish_event.challenge_index),
+                            param2: i64::from(finish_event.challenge_id),
                             param3: 0,
                             source_eid: 0,
                             target_eid: 0,
+                            ..Default::default()
                         },
                     });
                     challenge_finish_events.write(finish_event);
@@ -844,13 +945,20 @@ fn handle_script_command_group_event(
 
                     rt.active_suites = vec![*suite_id];
                     variable_store.0.set_suite(*group_id, *suite_id);
-                    rt.recompute_active_triggers();
+                    rt.reset_triggers();
 
                     let initial_vars: HashMap<String, i32> = rt
                         .data
                         .variables
                         .iter()
-                        .map(|v| (v.name.clone(), v.value))
+                        .map(|v| {
+                            let value = if v.no_refresh.unwrap_or(false) {
+                                variable_store.0.get_variable(*group_id, &v.name)
+                            } else {
+                                v.value
+                            };
+                            (v.name.clone(), value)
+                        })
                         .collect();
                     rt.variables = initial_vars.clone();
                     variable_store
@@ -876,7 +984,7 @@ fn handle_script_command_group_event(
                     });
                     rt.active_suites = vec![*suite_id];
                     variable_store.0.set_suite(*group_id, *suite_id);
-                    rt.recompute_active_triggers();
+                    rt.reset_triggers();
                 }
             }
 
@@ -899,41 +1007,35 @@ fn handle_script_command_group_event(
                     group_id: *group_id,
                     event_type: EventType::from(*event_type),
                     evt: LuaEvt {
-                        param1: *param1,
-                        param2: *param2,
-                        param3: *param3,
+                        param1: i64::from(*param1),
+                        param2: i64::from(*param2),
+                        param3: i64::from(*param3),
                         source_eid: 0,
                         target_eid: 0,
+                        ..Default::default()
                     },
                 });
             }
 
-            ScriptCommand::SetGroupVariableValueByGroup {
+            ScriptCommand::GroupVariableChanged {
                 group_id,
                 name,
                 value,
+                old_value,
             } => {
-                tracing::debug!(
-                    "[Script] [SetGroupVariableValueByGroup] group={} name={} val={}",
-                    group_id,
-                    name,
-                    value
-                );
-                variable_store.0.set_variable(*group_id, name, *value);
-            }
-
-            ScriptCommand::ChangeGroupVariableValueByGroup {
-                group_id,
-                name,
-                delta,
-            } => {
-                tracing::debug!(
-                    "[Script] [ChangeGroupVariableValueByGroup] group={} name={} delta={}",
-                    group_id,
-                    name,
-                    delta
-                );
-                variable_store.0.change_variable(*group_id, name, *delta);
+                if let Some(GroupLoadState::Loaded(runtime)) = registry.groups.get_mut(group_id) {
+                    runtime.variables.insert(name.clone(), *value);
+                    lua_trigger_events.write(LuaTriggerEvent {
+                        group_id: *group_id,
+                        event_type: EventType::EventVariableChange,
+                        evt: LuaEvt {
+                            param1: i64::from(*value),
+                            param2: i64::from(*old_value),
+                            source_name: name.clone(),
+                            ..Default::default()
+                        },
+                    });
+                }
             }
 
             _ => {}
@@ -1023,11 +1125,12 @@ fn handle_script_command_challenge_event(
                         group_id: *group_id,
                         event_type,
                         evt: LuaEvt {
-                            param1: *challenge_index,
-                            param2: challenge.challenge_id,
+                            param1: i64::from(*challenge_index),
+                            param2: i64::from(challenge.challenge_id),
                             param3: 0,
                             source_eid: 0,
                             target_eid: 0,
+                            ..Default::default()
                         },
                     });
 
@@ -1104,10 +1207,13 @@ fn handle_monster_kill_challenge_event(
                         challenge_id,
                         time_cost,
                     } => {
+                        challenge_manager.stop_challenge(challenge_index, true);
                         lua_trigger_events.write(LuaTriggerEvent {
                             group_id,
                             event_type: EventType::EventChallengeSuccess,
                             evt: LuaEvt {
+                                param1: challenge_index.into(),
+                                param2: challenge_id.into(),
                                 ..Default::default()
                             },
                         });
@@ -1133,10 +1239,13 @@ fn handle_monster_kill_challenge_event(
                         challenge_id,
                         time_cost,
                     } => {
+                        challenge_manager.stop_challenge(challenge_index, false);
                         lua_trigger_events.write(LuaTriggerEvent {
                             group_id,
                             event_type: EventType::EventChallengeFail,
                             evt: LuaEvt {
+                                param1: challenge_index.into(),
+                                param2: challenge_id.into(),
                                 ..Default::default()
                             },
                         });
@@ -1163,52 +1272,13 @@ fn handle_monster_kill_challenge_event(
 }
 
 fn lua_trigger_event_system(
-    mut ev_reader: MessageReader<LuaTriggerEvent>,
+    mut events: MessageReader<LuaTriggerEvent>,
     mut registry: NonSendMut<SceneGroupRegistry>,
+    variables: Res<SharedVariableStore>,
 ) {
-    use std::collections::hash_map::Entry;
-
-    for event in ev_reader.read() {
-        let group_id = event.group_id;
-
-        match registry.groups.entry(group_id) {
-            Entry::Vacant(_v) => {
-                //...
-            }
-
-            Entry::Occupied(mut o) => match o.get_mut() {
-                GroupLoadState::Loading => continue,
-                GroupLoadState::Failed => continue,
-
-                GroupLoadState::Loaded(rt) => {
-                    let Some(all_triggers) = rt.triggers_by_event.get(&event.event_type) else {
-                        continue;
-                    };
-
-                    tracing::debug!("[LuaTrigger] all_triggers:{}", all_triggers.len());
-
-                    for trig in all_triggers {
-                        if !rt.active_trigger_names.contains(&trig.name) {
-                            continue;
-                        }
-
-                        tracing::debug!("[LuaTrigger] trigger event:{:#?}", trig.name);
-
-                        let should_execute = match &trig.condition {
-                            Some(cond) => call_lua_trigger_condition(cond, rt.context, event.evt)
-                                .unwrap_or(false),
-                            None => true,
-                        };
-                        if should_execute {
-                            if let Some(action) = &trig.action {
-                                let _ = call_lua_trigger_action(action, rt.context, event.evt);
-                            }
-                        }
-                    }
-                }
-
-                GroupLoadState::Unloaded => unreachable!(),
-            },
+    for event in events.read() {
+        if let Some(GroupLoadState::Loaded(runtime)) = registry.groups.get_mut(&event.group_id) {
+            runtime.dispatch(&event.event_type, &event.evt, &variables.0);
         }
     }
 }
@@ -1351,11 +1421,12 @@ fn set_gadget_state_event(
                             group_id: *group_id,
                             event_type: EventType::EventGadgetStateChange,
                             evt: LuaEvt {
-                                param1: *state,
-                                param2: *config_id,
-                                param3: gadget_state.0,
+                                param1: i64::from(*state),
+                                param2: i64::from(*config_id),
+                                param3: i64::from(gadget_state.0),
                                 source_eid: entity_id.0,
                                 target_eid: entity_id.0,
+                                ..Default::default()
                             },
                         });
                     });
@@ -1387,11 +1458,12 @@ fn set_gadget_state_event(
                             group_id: *group_id,
                             event_type: EventType::EventGadgetStateChange,
                             evt: LuaEvt {
-                                param1: *state,
-                                param2: *config_id,
-                                param3: gadget_state.0,
+                                param1: i64::from(*state),
+                                param2: i64::from(*config_id),
+                                param3: i64::from(gadget_state.0),
                                 source_eid: entity_id.0,
                                 target_eid: entity_id.0,
+                                ..Default::default()
                             },
                         });
                     });

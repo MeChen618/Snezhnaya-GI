@@ -91,8 +91,9 @@ pub fn quest_exec(
                     let value = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
                     if let Some(ref mut parent_quest_bin) = player_quest_bin.parent_quest_bin {
-                        if let Some(parent_quest) =
-                            parent_quest_bin.parent_quest_map.get_mut(&event.parent_quest_id)
+                        if let Some(parent_quest) = parent_quest_bin
+                            .parent_quest_map
+                            .get_mut(&event.parent_quest_id)
                         {
                             while parent_quest.quest_var.len() <= index {
                                 parent_quest.quest_var.push(0);
@@ -121,8 +122,9 @@ pub fn quest_exec(
                     let delta = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
                     if let Some(ref mut parent_quest_bin) = player_quest_bin.parent_quest_bin {
-                        if let Some(parent_quest) =
-                            parent_quest_bin.parent_quest_map.get_mut(&event.parent_quest_id)
+                        if let Some(parent_quest) = parent_quest_bin
+                            .parent_quest_map
+                            .get_mut(&event.parent_quest_id)
                         {
                             while parent_quest.quest_var.len() <= index {
                                 parent_quest.quest_var.push(0);
@@ -151,8 +153,9 @@ pub fn quest_exec(
                     let delta = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
                     if let Some(ref mut parent_quest_bin) = player_quest_bin.parent_quest_bin {
-                        if let Some(parent_quest) =
-                            parent_quest_bin.parent_quest_map.get_mut(&event.parent_quest_id)
+                        if let Some(parent_quest) = parent_quest_bin
+                            .parent_quest_map
+                            .get_mut(&event.parent_quest_id)
                         {
                             while parent_quest.quest_var.len() <= index {
                                 parent_quest.quest_var.push(0);
@@ -180,8 +183,10 @@ pub fn quest_exec(
                     let key = param_u32(params, 0);
                     let value = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
-                    if let Some(existing) =
-                        player_quest_bin.quest_global_var_list.iter_mut().find(|v| v.key == key)
+                    if let Some(existing) = player_quest_bin
+                        .quest_global_var_list
+                        .iter_mut()
+                        .find(|v| v.key == key)
                     {
                         existing.value = value;
                     } else {
@@ -195,8 +200,10 @@ pub fn quest_exec(
                     let key = param_u32(params, 0);
                     let delta = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
-                    if let Some(existing) =
-                        player_quest_bin.quest_global_var_list.iter_mut().find(|v| v.key == key)
+                    if let Some(existing) = player_quest_bin
+                        .quest_global_var_list
+                        .iter_mut()
+                        .find(|v| v.key == key)
                     {
                         existing.value += delta;
                     } else {
@@ -210,8 +217,10 @@ pub fn quest_exec(
                     let key = param_u32(params, 0);
                     let delta = param_i32(params, 1);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
-                    if let Some(existing) =
-                        player_quest_bin.quest_global_var_list.iter_mut().find(|v| v.key == key)
+                    if let Some(existing) = player_quest_bin
+                        .quest_global_var_list
+                        .iter_mut()
+                        .find(|v| v.key == key)
                     {
                         existing.value -= delta;
                     } else {
@@ -246,10 +255,7 @@ pub fn quest_exec(
                 QuestExec::RollbackParentQuest => {
                     let target_quest_id = param_u32(params, 0);
                     quest_accept_events.write(QuestAcceptEvent(event.player_uid, target_quest_id));
-                    tracing::debug!(
-                        "[QuestExec] RollbackParentQuest target={}",
-                        target_quest_id
-                    );
+                    tracing::debug!("[QuestExec] RollbackParentQuest target={}", target_quest_id);
                 }
                 QuestExec::NotifyGroupLua => {
                     let scene_id = param_u32(params, 0);
@@ -265,6 +271,7 @@ pub fn quest_exec(
                                 param3: 0,
                                 source_eid: 0,
                                 target_eid: 0,
+                                ..Default::default()
                             },
                         });
                     }
@@ -340,10 +347,7 @@ pub fn quest_exec(
                     tracing::debug!("[QuestExec] AddCurAvatarEnergy");
                 }
                 QuestExec::SetIsFlyable => {
-                    tracing::debug!(
-                        "[QuestExec] SetIsFlyable value={}",
-                        param_u32(params, 0)
-                    );
+                    tracing::debug!("[QuestExec] SetIsFlyable value={}", param_u32(params, 0));
                 }
                 QuestExec::SetIsGameTimeLocked => {
                     tracing::debug!(
@@ -364,8 +368,9 @@ pub fn quest_exec(
                     let max_val = param_i32(params, 2);
                     let player_quest_bin = ensure_player_quest_comp(player_info);
                     if let Some(ref mut parent_quest_bin) = player_quest_bin.parent_quest_bin {
-                        if let Some(parent_quest) =
-                            parent_quest_bin.parent_quest_map.get_mut(&event.parent_quest_id)
+                        if let Some(parent_quest) = parent_quest_bin
+                            .parent_quest_map
+                            .get_mut(&event.parent_quest_id)
                         {
                             while parent_quest.quest_var.len() <= index {
                                 parent_quest.quest_var.push(0);
@@ -399,16 +404,10 @@ pub fn quest_exec(
                     }
                 }
                 QuestExec::InitTimeVar => {
-                    tracing::debug!(
-                        "[QuestExec] InitTimeVar index={}",
-                        param_u32(params, 0)
-                    );
+                    tracing::debug!("[QuestExec] InitTimeVar index={}", param_u32(params, 0));
                 }
                 QuestExec::ClearTimeVar => {
-                    tracing::debug!(
-                        "[QuestExec] ClearTimeVar index={}",
-                        param_u32(params, 0)
-                    );
+                    tracing::debug!("[QuestExec] ClearTimeVar index={}", param_u32(params, 0));
                 }
                 QuestExec::AddSceneTag => {
                     tracing::debug!(

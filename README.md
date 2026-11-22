@@ -43,7 +43,7 @@ bash scripts/start.sh
 
 第一次运行会生成 `game-server.toml` 和 `dispatch-server.toml`。
 
-让现有 SDK／客户端的 Dispatch 地址指向本项目的 `http://127.0.0.1:21001`；账号接口仍指向现有登录服务。账号服务和本项目使用独立存储，账号 UID 必须稳定。现有登录服务不会自动共享角色存档。上游游戏服未实现 SDK token 在线校验，请在可信测试网络中使用。
+让现有 SDK／客户端的 Dispatch 地址指向本项目的 `http://127.0.0.1:21001`；账号接口仍指向现有登录服务。账号服务和本项目使用独立存储，账号 UID 必须稳定。现有登录服务不会自动共享角色存档。游戏服通过 `[sdk]` 校验游戏令牌，失败不会创建角色。AstaPS 使用 `provider = "astaps"`，`verify_url` 填 `server.dispatch.dispatchUrl`，两个密钥对应 `server.dispatch.dispatchKey` 和 `encryptionKey`（Base64），也支持 `SNEZHNAYA_SDK_DISPATCH_KEY`、`SNEZHNAYA_SDK_ENCRYPTION_KEY` 环境变量；该 Dispatch 服务需已启动。hoyo-sdk 使用 `provider = "hoyo_sdk"`，`verify_url` 填完整的 `/hk4e_cn/mdk/shield/api/verify` 地址。
 
 远程连接时，修改两个 TOML 的监听地址，并同步修改 `assets/region/region_list.json` 的 `dispatch_url`、`gateserver_ip`、`gateserver_port` 为客户端可访问地址。HTTP、HTTPS 和证书需与现有登录服务／反向代理保持一致。随仓库提供的是上游测试密钥，客户端的区域与会话密钥配置必须匹配。`hot_fix_data` 默认留空；需要下载热更新时，填入与你的客户端完全对应的资源地址、版本及校验值。
 
@@ -51,13 +51,11 @@ bash scripts/start.sh
 
 ## 验证
 
-协议回归测试覆盖原生掩码公式、零值、进场 token、地图分层列表、64 位 GUID、有符号 64 位属性、oneof 内数字键映射及畸形网络包。资源检查会读取实际配置；联网检查使用独立的合成客户端：
+协议回归测试覆盖原生掩码、进场 token、地图分层、GUID、有符号属性和畸形包。资源检查读取实际配置；联网冒烟与压测工具仅在本地维护。
 
 ```bash
-# 游戏服启动后，在另一终端运行；会创建测试角色
-cargo run --locked -p snezhnaya-gi-game-server --example protocol_smoke
+cargo test --locked -p snezhnaya-gi-proto --lib
+./target/release/snezhnaya-gi-game-server --check-resources
 ```
-
-测试客户端默认连接 `127.0.0.1:21002`，可在命令后追加地址，通过 `SMOKE_ACCOUNT_UID` 指定隔离的数字测试账号。它验证 UDP/KCP、RSA／会话密钥、登录、进场和地图请求，不代替安卓客户端实机验收。
 
 [上游指令手册](handbook.md) 仍保留；部分内容随上游实现而变化。

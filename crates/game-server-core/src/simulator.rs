@@ -2,14 +2,17 @@ use crate::command::LOGIC_COMMAND_QUEUE;
 use crate::{command::LogicCommand, player_world::PlayerWorld};
 use common::logging::TRACE_LOG_PACKET;
 use common::player_cache::remove_player_cache;
-use common::time_util;
-use snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache;
 use snezhnaya_gi_data::GAME_SERVER_CONFIG;
+use snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache;
 use snezhnaya_gi_message::get_player_version;
 use snezhnaya_gi_message::output::ClientOutput;
 use snezhnaya_gi_proto::packet_head::PacketHead;
 use snezhnaya_gi_proto::server_only::PlayerDataBin;
-use std::{collections::HashMap, thread};
+use std::{
+    collections::{BTreeSet, HashMap},
+    thread,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone)]
 pub struct LogicSimulator;
@@ -65,10 +68,15 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
     // client_player_uid -> world_owner_uid
     let mut player_uid_map: HashMap<u32, u32> = HashMap::new();
     let mut player_world_map: HashMap<u32, PlayerWorld> = HashMap::new();
-    let mut player_save_time_map: HashMap<u32, u64> = HashMap::new();
+    let mut player_save_time_map: HashMap<u32, Instant> = HashMap::new();
+    let mut deadlines: BTreeSet<(Instant, u32)> = BTreeSet::new();
+    let mut scheduled: HashMap<u32, Instant> = HashMap::new();
 
     loop {
-        while let Some((uid, command)) = LOGIC_COMMAND_QUEUE.pop() {
+        for _ in 0..256 {
+            let Some((uid, command)) = LOGIC_COMMAND_QUEUE.pop() else {
+                break;
+            };
             use LogicCommand::*;
             match command {
                 Shutdown(done) => {
@@ -90,8 +98,7 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
                     player_information,
                     output,
                 } => {
-                    player_save_time_map
-                        .insert(player_information.uid, time_util::unix_timestamp());
+                    player_save_time_map.insert(player_information.uid, Instant::now());
                     player_uid_map.insert(player_information.uid, player_information.uid);
                     player_world_map.insert(
                         player_information.uid,
@@ -163,22 +170,6 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
                                             if immediate_mode {
                                                 world.update();
                                             }
-
-                                            match player_save_time_map.get_mut(&uid) {
-                                                None => {}
-                                                Some(save_time) => {
-                                                    let cur_time = time_util::unix_timestamp();
-                                                    if cur_time.saturating_sub(*save_time) >= 60
-                                                        && world.should_save(uid)
-                                                    {
-                                                        *save_time = cur_time;
-                                                        let _ = save_data_tx.blocking_send((
-                                                            uid,
-                                                            world.serialize_player_information(uid),
-                                                        ));
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                 }
@@ -213,9 +204,79 @@ fn simulation_loop(save_data_tx: tokio::sync::mpsc::Sender<(u32, Vec<u8>)>) {
                     tracing::info!("Player {} offline", uid);
                 }
             }
+            if let Some(&owner) = player_uid_map.get(&uid) {
+                if let Some(world) = player_world_map.get_mut(&owner) {
+                    if let Some(last_save) = player_save_time_map.get_mut(&owner) {
+                        save_world_if_due(owner, world, last_save, &save_data_tx);
+                        schedule_world(owner, world, *last_save, &mut scheduled, &mut deadlines);
+                    }
+                }
+            } else if let Some(deadline) = scheduled.remove(&uid) {
+                deadlines.remove(&(deadline, uid));
+            }
         }
 
-        // 有包才唤醒，空闲时不反复扫描队列。
-        thread::park();
+        let now = Instant::now();
+        while let Some(&(deadline, owner)) = deadlines.first() {
+            if deadline > now {
+                break;
+            }
+            deadlines.pop_first();
+            scheduled.remove(&owner);
+            if let Some(world) = player_world_map.get_mut(&owner) {
+                world.update();
+                if let Some(last_save) = player_save_time_map.get_mut(&owner) {
+                    save_world_if_due(owner, world, last_save, &save_data_tx);
+                    schedule_world(owner, world, *last_save, &mut scheduled, &mut deadlines);
+                }
+            }
+        }
+
+        if !LOGIC_COMMAND_QUEUE.is_empty() {
+            continue;
+        }
+
+        // 只更新到期的世界，空闲玩家不跟着循环扫描。
+        match deadlines.first() {
+            Some((deadline, _)) => {
+                thread::park_timeout(deadline.saturating_duration_since(Instant::now()))
+            }
+            None => thread::park(),
+        }
+    }
+}
+
+fn schedule_world(
+    owner: u32,
+    world: &PlayerWorld,
+    last_save: Instant,
+    scheduled: &mut HashMap<u32, Instant>,
+    deadlines: &mut BTreeSet<(Instant, u32)>,
+) {
+    if let Some(previous) = scheduled.remove(&owner) {
+        deadlines.remove(&(previous, owner));
+    }
+    let deadline = world
+        .next_wakeup()
+        .map_or(last_save + Duration::from_secs(60), |timer| {
+            timer.min(last_save + Duration::from_secs(60))
+        });
+    // 零延时脚本也让出一轮，避免自建定时器饿死其他玩家。
+    let deadline = deadline.max(Instant::now() + Duration::from_millis(1));
+    deadlines.insert((deadline, owner));
+    scheduled.insert(owner, deadline);
+}
+
+fn save_world_if_due(
+    uid: u32,
+    world: &mut PlayerWorld,
+    last_save: &mut Instant,
+    save_data: &tokio::sync::mpsc::Sender<(u32, Vec<u8>)>,
+) {
+    if last_save.elapsed() >= Duration::from_secs(60) {
+        if world.should_save(uid) {
+            let _ = save_data.blocking_send((uid, world.serialize_player_information(uid)));
+        }
+        *last_save = Instant::now();
     }
 }

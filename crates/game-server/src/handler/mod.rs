@@ -3,12 +3,12 @@ mod gm_util;
 
 // use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::handler::gm_util::execute_gm_cmd;
-use crate::{net::Connection, util, AppState};
+use crate::{AppState, net::Connection, util};
 use anyhow::Result;
 use common::player_cache::{cache_set_client_time, cache_set_player_client_data_version};
 use snezhnaya_gi_encryption::xor::MhyXorpad;
@@ -17,10 +17,10 @@ use snezhnaya_gi_proto::normal::{
     GetPlayerTokenReq, GetPlayerTokenRsp, PingReq, PingRsp, PlayerLoginReq, UnionCmdNotify,
 };
 use snezhnaya_gi_proto::{
-    packet_head::PacketHead,
-    raw_packet::{make_raw_packet, RawPacket},
-    retcode::Retcode,
     Protobuf,
+    packet_head::PacketHead,
+    raw_packet::{RawPacket, make_raw_packet},
+    retcode::Retcode,
 };
 use tokio::sync::mpsc;
 
@@ -29,6 +29,11 @@ enum InputItem {
     DropConnection(u32),
     Packet(u32, Box<[u8]>),
     Shutdown(tokio::sync::oneshot::Sender<()>),
+    TokenVerified(
+        u32,
+        Arc<Session>,
+        Result<get_player_token::VerifiedToken, i32>,
+    ),
 }
 
 #[derive(Clone)]
@@ -41,6 +46,7 @@ pub struct Session {
     pub xor_pad: OnceLock<MhyXorpad>,
     pub version: OnceLock<String>,
     pub login_started: AtomicBool,
+    token_pending: AtomicBool,
 }
 
 impl PacketHandler {
@@ -71,9 +77,20 @@ impl PacketHandler {
 }
 
 async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: &'static AppState) {
-    while let Some(item) = rx.recv().await {
+    let mut token_tasks = tokio::task::JoinSet::new();
+    loop {
+        let item = tokio::select! {
+            item = rx.recv() => match item { Some(item) => item, None => break },
+            completed = token_tasks.join_next(), if !token_tasks.is_empty() => match completed {
+                Some(Ok(item)) => item,
+                Some(Err(error)) => { tracing::error!(%error, "SDK verification task failed"); continue; }
+                None => continue,
+            },
+        };
         match item {
             InputItem::Shutdown(done) => {
+                token_tasks.abort_all();
+                while token_tasks.join_next().await.is_some() {}
                 for session in state.sessions.iter() {
                     if let Some(uid) = session.player_uid.get() {
                         state.logic_simulator.offline(*uid);
@@ -82,6 +99,32 @@ async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: 
                 state.sessions.clear();
                 let _ = done.send(());
                 break;
+            }
+            InputItem::TokenVerified(id, session, result) => {
+                let active = state
+                    .sessions
+                    .get(&id)
+                    .is_some_and(|current| Arc::ptr_eq(current.value(), &session));
+                if !active {
+                    continue;
+                }
+                session.token_pending.store(false, Ordering::Release);
+                let response = match result {
+                    Ok(verified) => get_player_token::complete(&session, verified),
+                    Err(retcode) => GetPlayerTokenRsp {
+                        retcode,
+                        ..Default::default()
+                    },
+                };
+                if response.retcode == 0 {
+                    snezhnaya_gi_message::PLAYER_VERSION
+                        .get()
+                        .unwrap()
+                        .insert(response.uid, session.version.get().unwrap().clone());
+                }
+                if let Err(error) = send_token_response(state, &session, response).await {
+                    tracing::warn!(%error, "could not send token response");
+                }
             }
             InputItem::NewConnection(conn) => {
                 state.sessions.insert(
@@ -93,6 +136,7 @@ async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: 
                         xor_pad: OnceLock::new(),
                         version: Default::default(),
                         login_started: AtomicBool::new(false),
+                        token_pending: AtomicBool::new(false),
                     }),
                 );
             }
@@ -111,7 +155,9 @@ async fn packet_handler_loop(mut rx: mpsc::UnboundedReceiver<InputItem>, state: 
                     .get(&id)
                     .map(|session| Arc::clone(session.value()))
                 {
-                    if let Err(err) = handle_packet(state, &session, buf, id).await {
+                    if let Err(err) =
+                        handle_packet(state, &session, buf, id, &mut token_tasks).await
+                    {
                         tracing::warn!("handle_packet(connection_id: {id}) failed, error: {err}");
                     }
                 }
@@ -125,6 +171,7 @@ async fn handle_packet(
     session: &Arc<Session>,
     mut data: Box<[u8]>,
     conv: u32,
+    token_tasks: &mut tokio::task::JoinSet<InputItem>,
 ) -> Result<()> {
     // if session.connection.source_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
     //     return Ok(())
@@ -183,101 +230,53 @@ async fn handle_packet(
         Some(message_name) => {
             match message_name.as_str() {
                 "GetPlayerTokenReq" => {
-                    match snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
-                        GetPlayerTokenReq,
-                    >(version, "GetPlayerTokenReq", body)
-                    {
-                        None => {
-                            tracing::error!(
-                                "version:{} message_name:{} error",
-                                version,
-                                "GetPlayerTokenReq"
-                            );
-                        }
-                        Some(request) => {
-                            tracing::info!(
-                                "GetPlayerTokenReq... account_uid:{}",
-                                request.account_uid.clone()
-                            );
-                            let session = session.clone();
-
-                            // Run in separate task because db fetch operation may take a while
-
-                            match state
-                                .db_handle
-                                .fetch_user_uid(request.account_uid.clone())
-                                .await
-                            {
-                                Ok(uid) => {
-                                    let rsp = get_player_token::process_message(
-                                        state, &session, request, uid,
-                                    );
-
-                                    tracing::debug!(
-                                        "USER_VERSION uid:{} version: {}",
-                                        uid,
-                                        version
-                                    );
-
-                                    if rsp.retcode == 0 {
-                                        snezhnaya_gi_message::PLAYER_VERSION
-                                            .get()
-                                            .unwrap()
-                                            .insert(uid, version.to_string());
-                                    }
-
-                                    match snezhnaya_gi_proto::dy_parser::get_cmd_id_by_name_version(
-                                        version,
-                                        "GetPlayerTokenRsp",
-                                    ) {
-                                        None => {
-                                            tracing::error!(
-                                                "version:{} message_name:{} error",
-                                                version, "GetPlayerTokenRsp"
-                                            );
-                                        }
-                                        Some(cmd_id) => {
-                                            match snezhnaya_gi_proto::dy_parser::encode_to_vec_by_name_version::<GetPlayerTokenRsp>(
-                                                version,
-                                                "GetPlayerTokenRsp",
-                                                &rsp,
-                                            ) {
-                                                None => {
-                                                    tracing::error!(
-                                                        "version:{} message_name:{} error",
-                                                        version, "GetPlayerTokenRsp"
-                                                    );
-                                                }
-                                                Some(body) => {
-                                                    let mut data = make_raw_packet(
-                                                        cmd_id,
-                                                        PacketHead::default(),
-                                                        &body,
-                                                    );
-
-
-                                                    util::xor_packet(
-                                                        None,
-                                                        state.initial_xor_pad.as_ref(),
-                                                        &mut data,
-                                                    );
-
-
-                                                    session.connection.send(data).await;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(_) => {
-                                    tracing::error!(
-                                        "account_uid:{}  error",
-                                        request.account_uid.clone()
-                                    );
-                                }
-                            }
-                        }
+                    if session.account_uid.get().is_some() {
+                        return send_token_response(
+                            state,
+                            session,
+                            GetPlayerTokenRsp {
+                                retcode: Retcode::RetGetTokenSessionHasUid.into(),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
                     }
+                    if session.token_pending.load(Ordering::Acquire) {
+                        return Ok(());
+                    }
+                    let Some(request) =
+                        snezhnaya_gi_proto::dy_parser::decode_from_vec_by_name_version::<
+                            GetPlayerTokenReq,
+                        >(version, "GetPlayerTokenReq", body)
+                    else {
+                        return send_token_response(
+                            state,
+                            session,
+                            GetPlayerTokenRsp {
+                                retcode: Retcode::RetTokenParamError.into(),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    };
+                    let Some(permit) = state.sdk.try_reserve() else {
+                        return send_token_response(
+                            state,
+                            session,
+                            GetPlayerTokenRsp {
+                                retcode: Retcode::RetSystemBusy.into(),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    };
+                    session.token_pending.store(true, Ordering::Release);
+                    let session = session.clone();
+                    token_tasks.spawn(async move {
+                        let _permit = permit;
+                        let result = get_player_token::verify(state, request).await;
+                        InputItem::TokenVerified(conv, session, result)
+                    });
                 }
                 "PlayerLoginReq" => {
                     tracing::debug!("PlayerLoginReq received packet: {}", hex::encode(&body));
@@ -509,4 +508,28 @@ async fn packet_sink(
             }
         }
     }
+}
+
+async fn send_token_response(
+    state: &AppState,
+    session: &Session,
+    response: GetPlayerTokenRsp,
+) -> Result<()> {
+    let version = session
+        .version
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("token response has no protocol version"))?;
+    let id =
+        snezhnaya_gi_proto::dy_parser::get_cmd_id_by_name_version(version, "GetPlayerTokenRsp")
+            .ok_or_else(|| anyhow::anyhow!("GetPlayerTokenRsp is not registered"))?;
+    let body = snezhnaya_gi_proto::dy_parser::encode_to_vec_by_name_version(
+        version,
+        "GetPlayerTokenRsp",
+        &response,
+    )
+    .ok_or_else(|| anyhow::anyhow!("could not encode GetPlayerTokenRsp"))?;
+    let mut packet = make_raw_packet(id, PacketHead::default(), &body);
+    util::xor_packet(None, state.initial_xor_pad.as_ref(), &mut packet);
+    session.connection.send(packet).await;
+    Ok(())
 }

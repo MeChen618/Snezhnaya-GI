@@ -17,8 +17,8 @@ use snezhnaya_gi_event::lua::{
 };
 use snezhnaya_gi_event::scene::{WorldOwnerUID, WorldVersionConfig};
 
-use crate::script_load::GroupLoadState;
 use crate::SceneGroupRegistry;
+use crate::script_load::GroupLoadState;
 use snezhnaya_gi_proto::normal::scene_gadget_info::Content;
 use snezhnaya_gi_proto::normal::{GatherGadgetInfo, VisionType};
 use snezhnaya_gi_proto::server_only::VectorBin;
@@ -107,11 +107,12 @@ pub fn spawn_suite_entities(
                     group_id: event.group_id,
                     event_type: EventType::EventAnyMonsterLive,
                     evt: LuaEvt {
-                        param1: monster.config_id,
-                        param2: monster.config_id,
+                        param1: i64::from(monster.config_id),
+                        param2: i64::from(monster.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
 
@@ -174,11 +175,12 @@ pub fn spawn_suite_entities(
                     group_id: event.group_id,
                     event_type: EventType::EventGadgetCreate,
                     evt: LuaEvt {
-                        param1: gadget.config_id,
-                        param2: gadget.config_id,
+                        param1: i64::from(gadget.config_id),
+                        param2: i64::from(gadget.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
 
@@ -268,7 +270,9 @@ pub fn spawn_group_entity(
         // Handle suite refresh for quest RefreshGroupSuite exec
         if event.refresh_suite_id != 0 {
             if let Some(GroupLoadState::Loaded(rt)) = registry.groups.get_mut(&event.group_id) {
-                if event.refresh_suite_id as usize > rt.data.suites.len() { continue; }
+                if event.refresh_suite_id as usize > rt.data.suites.len() {
+                    continue;
+                }
                 rt.active_suites = vec![event.refresh_suite_id];
                 variable_store
                     .0
@@ -359,11 +363,12 @@ pub fn spawn_group_entity(
                     group_id: event.group_id,
                     event_type: snezhnaya_gi_data::scene::EventType::EventAnyMonsterLive,
                     evt: snezhnaya_gi_data::scene::LuaEvt {
-                        param1: monster.config_id,
-                        param2: monster.config_id,
+                        param1: i64::from(monster.config_id),
+                        param2: i64::from(monster.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
             }
@@ -435,11 +440,12 @@ pub fn spawn_group_entity(
                     group_id: event.group_id,
                     event_type: EventType::EventGadgetCreate,
                     evt: LuaEvt {
-                        param1: gadget.config_id,
-                        param2: gadget.config_id,
+                        param1: i64::from(gadget.config_id),
+                        param2: i64::from(gadget.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
             }
@@ -454,6 +460,7 @@ pub fn spawn_group_entity(
                 param3: 0,
                 source_eid: 0,
                 target_eid: 0,
+                ..Default::default()
             },
         });
     }
@@ -583,11 +590,12 @@ pub fn refresh_group_entity(
                     group_id,
                     event_type: EventType::EventAnyMonsterLive,
                     evt: LuaEvt {
-                        param1: monster.config_id,
-                        param2: monster.config_id,
+                        param1: i64::from(monster.config_id),
+                        param2: i64::from(monster.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
             }
@@ -660,11 +668,12 @@ pub fn refresh_group_entity(
                     group_id,
                     event_type: EventType::EventGadgetCreate,
                     evt: LuaEvt {
-                        param1: gadget.config_id,
-                        param2: gadget.config_id,
+                        param1: i64::from(gadget.config_id),
+                        param2: i64::from(gadget.config_id),
                         param3: 0,
                         source_eid: entity_id,
                         target_eid: entity_id,
+                        ..Default::default()
                     },
                 });
             }

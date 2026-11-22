@@ -38,3 +38,6 @@ snezhnaya-gi-encryption.workspace = true
 
 # Network
 kcp.workspace = true
+futures-util = { version = "0.3", features = ["sink"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }

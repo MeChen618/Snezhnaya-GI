@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 pub struct ChallengeManager {
     pub active_challenges: HashMap<u32, ActiveChallenge>,
     pub challenge_index_counter: u32,
+    clocks: HashMap<u32, Instant>,
 }
 
 impl ChallengeManager {
@@ -19,6 +20,7 @@ impl ChallengeManager {
         Self {
             active_challenges: HashMap::new(),
             challenge_index_counter: 0,
+            clocks: HashMap::new(),
         }
     }
 
@@ -92,6 +94,7 @@ impl ChallengeManager {
         let param_list = challenge.get_initial_param_list();
         challenge.start();
         self.active_challenges.insert(index, challenge);
+        self.clocks.insert(index, Instant::now());
         tracing::debug!(
             "[ChallengeManager] Started challenge {} with index {}, param_list: {:?}",
             challenge_id,
@@ -111,6 +114,7 @@ impl ChallengeManager {
         challenge_index: u32,
         is_success: bool,
     ) -> Option<(ActiveChallenge, ChallengeFinishEvent)> {
+        self.clocks.remove(&challenge_index);
         if let Some(challenge) = self.active_challenges.get_mut(&challenge_index) {
             let reason = if is_success {
                 ChallengeFinishReason::Success
@@ -139,20 +143,31 @@ impl ChallengeManager {
     }
 
     pub fn update_challenges(&mut self) -> Vec<ChallengeUpdateResult> {
+        self.update_challenges_at(Instant::now())
+    }
+
+    pub(crate) fn update_challenges_at(&mut self, now: Instant) -> Vec<ChallengeUpdateResult> {
         let mut results = Vec::new();
-
         let indices: Vec<u32> = self.active_challenges.keys().copied().collect();
-
         for index in indices {
-            if let Some(challenge) = self.active_challenges.get_mut(&index) {
-                if challenge.state != ChallengeState::Active {
-                    continue;
-                }
-
-                results.push(self.update_challenges_by_index(index));
+            let challenge = self.active_challenges.get_mut(&index).unwrap();
+            let last = self.clocks.entry(index).or_insert(now);
+            if challenge.state != ChallengeState::Active {
+                *last = now;
+                continue;
             }
+            let elapsed = now.saturating_duration_since(*last).as_secs();
+            challenge.time_cost = challenge
+                .time_cost
+                .saturating_add(elapsed.min(u32::MAX as u64) as u32);
+            *last += Duration::from_secs(elapsed);
+            let result = self.update_challenges_by_index(index);
+            if !matches!(result, ChallengeUpdateResult::Running { .. }) {
+                self.active_challenges.remove(&index);
+                self.clocks.remove(&index);
+            }
+            results.push(result);
         }
-
         results
     }
 
@@ -203,6 +218,8 @@ impl ChallengeManager {
 
         self.active_challenges
             .retain(|_, challenge| challenge.group_id != group_id);
+        self.clocks
+            .retain(|index, _| self.active_challenges.contains_key(index));
 
         events
     }
@@ -253,6 +270,12 @@ pub struct ChallengeTimer {
     interval: Duration,
 }
 
+impl ChallengeTimer {
+    pub(crate) fn next_deadline(&self) -> Instant {
+        self.last_tick + self.interval
+    }
+}
+
 impl Default for ChallengeTimer {
     fn default() -> Self {
         Self {
@@ -287,6 +310,8 @@ pub fn challenge_timer_system(
                             group_id,
                             event_type: EventType::EventChallengeSuccess,
                             evt: LuaEvt {
+                                param1: challenge_index.into(),
+                                param2: challenge_id.into(),
                                 ..Default::default()
                             },
                         });
@@ -316,6 +341,8 @@ pub fn challenge_timer_system(
                             group_id,
                             event_type: EventType::EventChallengeFail,
                             evt: LuaEvt {
+                                param1: challenge_index.into(),
+                                param2: challenge_id.into(),
                                 ..Default::default()
                             },
                         });

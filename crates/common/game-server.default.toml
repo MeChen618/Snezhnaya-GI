@@ -14,3 +14,13 @@ quest = true
 
 [database]
 db_file = "game.db"
+
+[sdk]
+# AstaPS 填入 dispatch 的地址和密钥，也可用同名 SNEZHNAYA_SDK_* 环境变量。
+provider = "astaps"
+verify_url = "ws://127.0.0.1:1111"
+dispatch_key = ""
+encryption_key = ""
+timeout_ms = 3000
+max_pending = 64
+# hoyo-sdk 则改为 provider = "hoyo_sdk"，verify_url 填完整的 /hk4e_cn/mdk/shield/api/verify 地址。

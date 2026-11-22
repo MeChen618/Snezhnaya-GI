@@ -3,7 +3,7 @@ use bevy_ecs::prelude::*;
 use common::{
     EntityById, EntityCounter, FightProperties, LifeState, ProtocolEntityID, ToBeRemovedMarker,
 };
-use snezhnaya_gi_data::custom::{resolve_drop, CombinedDrop};
+use snezhnaya_gi_data::custom::{CombinedDrop, resolve_drop};
 use snezhnaya_gi_data::prop_type::FightPropType;
 use snezhnaya_gi_data::quest::quest_config::QuestContent;
 use snezhnaya_gi_data::scene::{EventType, LuaEvt};
@@ -304,11 +304,12 @@ fn update_entity_life_state(
                         group_id: group_id.0,
                         event_type: EventType::EventAnyMonsterDie,
                         evt: LuaEvt {
-                            param1: config_id.0,
+                            param1: i64::from(config_id.0),
                             param2: 0,
                             param3: 0,
                             source_eid: id.0,
                             target_eid: id.0,
+                            ..Default::default()
                         },
                     });
 
@@ -350,11 +351,12 @@ fn update_entity_life_state(
                         group_id: group_id.0,
                         event_type: EventType::EventAnyGadgetDie,
                         evt: LuaEvt {
-                            param1: config_id.0,
+                            param1: i64::from(config_id.0),
                             param2: 0,
                             param3: 0,
                             source_eid: id.0,
                             target_eid: id.0,
+                            ..Default::default()
                         },
                     });
                 }
@@ -477,11 +479,12 @@ pub fn handle_entity(
                                     group_id: group_id.0,
                                     event_type: EventType::EventSelectOption,
                                     evt: LuaEvt {
-                                        param1: config_id.0,
-                                        param2: req.option_id,
+                                        param1: i64::from(config_id.0),
+                                        param2: i64::from(req.option_id),
                                         param3: 0,
                                         source_eid: req.gadget_entity_id,
                                         target_eid: req.gadget_entity_id,
+                                        ..Default::default()
                                     },
                                 });
 

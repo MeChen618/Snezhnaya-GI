@@ -16,8 +16,8 @@ use snezhnaya_gi_data::scene::script_cache::{
     compiled_lua_scripts, init_scene_static_templates, load_lua_vm,
 };
 use snezhnaya_gi_data::{
-    config::load_avatar_configs_from_bin, config::load_gadget_configs_from_bin, custom, excel,
-    GAME_SERVER_CONFIG, REGION_LIST,
+    GAME_SERVER_CONFIG, REGION_LIST, config::load_avatar_configs_from_bin,
+    config::load_gadget_configs_from_bin, custom, excel,
 };
 use snezhnaya_gi_encryption::{rsa::RsaKeyPair, xor::MhyXorpad};
 use std::collections::HashMap;
@@ -31,6 +31,7 @@ mod player_info_util;
 
 mod handler;
 mod net;
+mod sdk;
 mod util;
 
 struct AppState {
@@ -38,6 +39,7 @@ struct AppState {
     pub conn_mgr: Arc<ConnectionManager>,
     pub db_handle: DbWorkerHandle,
     pub logic_simulator: LogicSimulator,
+    pub sdk: sdk::SdkClient,
     region_config: RegionConfig,
     sessions: DashMap<u32, Arc<handler::Session>>,
     key_pair_map: HashMap<u32, RsaKeyPair>,
@@ -66,6 +68,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    let sdk = sdk::SdkClient::new(&GAME_SERVER_CONFIG.sdk)
+        .context("configuring SDK token verification")?;
     let db_connection = snezhnaya_gi_database::connect_to(&GAME_SERVER_CONFIG.database)?;
     let (db_handle, save_data_tx) = db_worker::start(db_connection);
 
@@ -106,6 +110,7 @@ async fn main() -> Result<()> {
         socket: Arc::clone(&socket),
         conn_mgr: Arc::new(ConnectionManager::default()),
         db_handle,
+        sdk,
         logic_simulator: LogicSimulator::spawn(save_data_tx),
         region_config: cur_region,
         sessions: DashMap::new(),

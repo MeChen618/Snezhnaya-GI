@@ -563,13 +563,17 @@ pub struct LuaContext {
     pub uid: u32,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct LuaEvt {
-    pub param1: u32,
-    pub param2: u32,
-    pub param3: u32,
+    pub param1: i64,
+    pub param2: i64,
+    pub param3: i64,
     pub source_eid: u32,
     pub target_eid: u32,
+    pub source_name: String,
+    pub param_str1: String,
+    pub uid: u32,
+    pub event_type: u32,
 }
 
 impl IntoLua for LuaContext {
@@ -581,6 +585,11 @@ impl IntoLua for LuaContext {
         tbl.set("source_entity_id", self.source_entity_id)?;
         tbl.set("target_entity_id", self.target_entity_id)?;
         tbl.set("uid", self.uid)?;
+        tbl.set("sceneId", self.scene_id)?;
+        tbl.set("groupId", self.group_id)?;
+        tbl.set("configId", self.config_id)?;
+        tbl.set("sourceEntityId", self.source_entity_id)?;
+        tbl.set("targetEntityId", self.target_entity_id)?;
         Ok(Value::Table(tbl))
     }
 }
@@ -593,6 +602,10 @@ impl IntoLua for LuaEvt {
         tbl.set("param3", self.param3)?;
         tbl.set("source_eid", self.source_eid)?;
         tbl.set("target_eid", self.target_eid)?;
+        tbl.set("source_name", self.source_name)?;
+        tbl.set("param_str1", self.param_str1)?;
+        tbl.set("uid", self.uid)?;
+        tbl.set("type", self.event_type)?;
         Ok(Value::Table(tbl))
     }
 }
@@ -759,15 +772,11 @@ pub enum ScriptCommand {
         group_id: u32,
         suite_id: u32,
     },
-    SetGroupVariableValueByGroup {
+    GroupVariableChanged {
         group_id: u32,
         name: String,
         value: i32,
-    },
-    ChangeGroupVariableValueByGroup {
-        group_id: u32,
-        name: String,
-        delta: i32,
+        old_value: i32,
     },
     CreateGroupTimerEvent {
         group_id: u32,
@@ -779,14 +788,23 @@ pub enum ScriptCommand {
         source: String,
     },
     InitTimeAxis {
+        group_id: u32,
         identifier: String,
         delays: Vec<f64>,
         should_loop: bool,
     },
     EndTimeAxis {
+        group_id: u32,
         identifier: String,
     },
-    EndAllTimeAxis,
+    EndAllTimeAxis {
+        group_id: u32,
+    },
+    SetTimeAxisPaused {
+        group_id: u32,
+        identifier: String,
+        paused: bool,
+    },
     TransPlayerToPos {
         uid_list: Vec<u32>,
         pos: (f32, f32, f32),

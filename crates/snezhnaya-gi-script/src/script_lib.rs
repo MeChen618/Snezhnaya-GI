@@ -3,6 +3,7 @@ use crossbeam_queue::SegQueue;
 use mlua::{Function, Table};
 pub(crate) use snezhnaya_gi_data::scene::{LuaContext, LuaEvt, ScriptCommand};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
 #[allow(unused)]
@@ -115,11 +116,19 @@ pub trait ScriptLib: Send + Sync + 'static {
     fn change_group_variable_value_by_group(&self, group_id: u32, name: &str, delta: i32) -> i32;
 
     // timer
-    fn create_group_timer_event(&self, group_id: u32, source: &str, time: f64);
+    fn create_group_timer_event(&self, group_id: u32, source: &str, time: f64) -> i32;
     fn cancel_group_timer_event(&self, group_id: u32, source: &str);
-    fn init_time_axis(&self, identifier: &str, delays: Vec<f64>, should_loop: bool);
-    fn end_time_axis(&self, identifier: &str);
-    fn end_all_time_axis(&self);
+    fn init_time_axis(
+        &self,
+        group_id: u32,
+        identifier: &str,
+        delays: Vec<f64>,
+        should_loop: bool,
+    ) -> i32;
+    fn end_time_axis(&self, group_id: u32, identifier: &str);
+    fn end_all_time_axis(&self, group_id: u32);
+    fn set_time_axis_paused(&self, group_id: u32, identifier: &str, paused: bool);
+    fn get_cur_trigger_count(&self) -> u32;
 
     // teleport
     fn trans_player_to_pos(
@@ -148,8 +157,9 @@ pub trait ScriptLib: Send + Sync + 'static {
 
 pub struct GroupVariableStore {
     // group_id -> (variable_name -> value)
-    pub variables: RwLock<HashMap<u32, HashMap<String, i32>>>,
+    variables: RwLock<HashMap<u32, HashMap<String, i32>>>,
     suites: RwLock<HashMap<u32, u32>>,
+    pub(crate) current_trigger_count: AtomicU32,
 }
 
 impl GroupVariableStore {
@@ -157,6 +167,7 @@ impl GroupVariableStore {
         Self {
             variables: RwLock::new(HashMap::new()),
             suites: RwLock::new(HashMap::new()),
+            current_trigger_count: AtomicU32::new(0),
         }
     }
 
@@ -212,66 +223,44 @@ impl GroupVariableStore {
             }
         }
     }
-
-    pub fn set_variable(&self, group_id: u32, name: &str, value: i32) -> i32 {
-        match self.variables.write() {
-            Ok(mut store) => {
-                if let Some(vars) = store.get_mut(&group_id) {
-                    if let Some(val) = vars.get_mut(name) {
-                        *val = value;
-                        return 0;
-                    }
-                }
-                -1
-            }
-            Err(_) => {
-                eprintln!("Failed to lock variables store");
-                return -1;
-            }
-        }
-    }
-
-    pub fn change_variable(&self, group_id: u32, name: &str, delta: i32) -> i32 {
-        match self.variables.write() {
-            Ok(mut store) => {
-                if let Some(vars) = store.get_mut(&group_id) {
-                    if let Some(val) = vars.get_mut(name) {
-                        let Some(next) = val.checked_add(delta) else {
-                            return -1;
-                        };
-                        *val = next;
-                        return 0;
-                    }
-                }
-                -1
-            }
-            Err(_) => {
-                eprintln!("Failed to lock variables store");
-                return -1;
-            }
-        }
-    }
-
-    pub fn reset_group_variables(&self, group_id: u32, vars: &[(String, i32)]) {
-        match self.variables.write() {
-            Ok(mut store) => {
-                if let Some(group_vars) = store.get_mut(&group_id) {
-                    for (name, value) in vars {
-                        group_vars.insert(name.clone(), *value);
-                    }
-                }
-            }
-            Err(_) => {
-                eprintln!("Failed to lock variables store");
-            }
-        }
-    }
 }
 
 #[derive(Resource, Clone)]
 pub struct BevyScriptLib {
     pub queue: Arc<SegQueue<ScriptCommand>>,
     pub variable_store: Arc<GroupVariableStore>,
+}
+
+impl BevyScriptLib {
+    fn update_variable(
+        &self,
+        group_id: u32,
+        name: &str,
+        change: impl FnOnce(i32) -> Option<i32>,
+    ) -> i32 {
+        let Ok(mut groups) = self.variable_store.variables.write() else {
+            return -1;
+        };
+        let Some(value) = groups
+            .get_mut(&group_id)
+            .and_then(|vars| vars.get_mut(name))
+        else {
+            return -1;
+        };
+        let Some(next) = change(*value) else {
+            return -1;
+        };
+        if next != *value {
+            self.queue.push(ScriptCommand::GroupVariableChanged {
+                group_id,
+                name: name.to_string(),
+                value: next,
+                old_value: *value,
+            });
+            *value = next;
+        }
+        0
+    }
 }
 
 impl ScriptLib for BevyScriptLib {
@@ -296,11 +285,11 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn set_group_variable_value(&self, group_id: u32, name: &str, value: i32) -> i32 {
-        self.variable_store.set_variable(group_id, name, value)
+        self.update_variable(group_id, name, |_| Some(value))
     }
 
     fn change_group_variable_value(&self, group_id: u32, name: &str, delta: i32) -> i32 {
-        self.variable_store.change_variable(group_id, name, delta)
+        self.update_variable(group_id, name, |value| value.checked_add(delta))
     }
 
     fn refresh_group(&self, group_id: u32, suite_id: u32) {
@@ -447,7 +436,8 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn cause_dungeon_result(&self, is_success: bool) {
-        self.queue.push(ScriptCommand::CauseDungeonResult { is_success });
+        self.queue
+            .push(ScriptCommand::CauseDungeonResult { is_success });
     }
 
     fn move_player_to_pos(
@@ -550,7 +540,8 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn go_to_group_suite(&self, group_id: u32, suite_id: u32) {
-        self.queue.push(ScriptCommand::GoToGroupSuite { group_id, suite_id });
+        self.queue
+            .push(ScriptCommand::GoToGroupSuite { group_id, suite_id });
     }
 
     fn get_group_suite(&self, group_id: u32) -> u32 {
@@ -558,40 +549,25 @@ impl ScriptLib for BevyScriptLib {
     }
 
     fn set_group_variable_value_by_group(&self, group_id: u32, name: &str, value: i32) -> i32 {
-        let result = self.variable_store.set_variable(group_id, name, value);
-        if result != 0 {
-            return result;
-        }
-        self.queue
-            .push(ScriptCommand::SetGroupVariableValueByGroup {
-                group_id,
-                name: name.to_string(),
-                value,
-            });
-        0
+        self.set_group_variable_value(group_id, name, value)
     }
 
     fn change_group_variable_value_by_group(&self, group_id: u32, name: &str, delta: i32) -> i32 {
-        let result = self.variable_store.change_variable(group_id, name, delta);
-        if result != 0 {
-            return result;
-        }
-        // 变量已同步更新，队列携带结果，避免再次累加。
-        self.queue
-            .push(ScriptCommand::SetGroupVariableValueByGroup {
-                group_id,
-                name: name.to_string(),
-                value: self.variable_store.get_variable(group_id, name),
-            });
-        0
+        self.change_group_variable_value(group_id, name, delta)
     }
 
-    fn create_group_timer_event(&self, group_id: u32, source: &str, time: f64) {
+    fn create_group_timer_event(&self, group_id: u32, source: &str, time: f64) -> i32 {
+        if self.variable_store.get_suite(group_id) == 0
+            || crate::script_timer::timer_delay(source, time).is_none()
+        {
+            return -1;
+        }
         self.queue.push(ScriptCommand::CreateGroupTimerEvent {
             group_id,
             source: source.to_string(),
             time,
         });
+        0
     }
 
     fn cancel_group_timer_event(&self, group_id: u32, source: &str) {
@@ -601,22 +577,50 @@ impl ScriptLib for BevyScriptLib {
         });
     }
 
-    fn init_time_axis(&self, identifier: &str, delays: Vec<f64>, should_loop: bool) {
+    fn init_time_axis(
+        &self,
+        group_id: u32,
+        identifier: &str,
+        delays: Vec<f64>,
+        should_loop: bool,
+    ) -> i32 {
+        if self.variable_store.get_suite(group_id) == 0
+            || crate::script_timer::time_points(identifier, &delays, should_loop).is_none()
+        {
+            return -1;
+        }
         self.queue.push(ScriptCommand::InitTimeAxis {
+            group_id,
             identifier: identifier.to_string(),
             delays,
             should_loop,
         });
+        0
     }
 
-    fn end_time_axis(&self, identifier: &str) {
+    fn end_time_axis(&self, group_id: u32, identifier: &str) {
         self.queue.push(ScriptCommand::EndTimeAxis {
+            group_id,
             identifier: identifier.to_string(),
         });
     }
 
-    fn end_all_time_axis(&self) {
-        self.queue.push(ScriptCommand::EndAllTimeAxis);
+    fn end_all_time_axis(&self, group_id: u32) {
+        self.queue.push(ScriptCommand::EndAllTimeAxis { group_id });
+    }
+
+    fn set_time_axis_paused(&self, group_id: u32, identifier: &str, paused: bool) {
+        self.queue.push(ScriptCommand::SetTimeAxisPaused {
+            group_id,
+            identifier: identifier.to_string(),
+            paused,
+        });
+    }
+
+    fn get_cur_trigger_count(&self) -> u32 {
+        self.variable_store
+            .current_trigger_count
+            .load(Ordering::Relaxed)
     }
 
     fn trans_player_to_pos(
@@ -689,9 +693,12 @@ pub fn call_lua_trigger_action(
     func: &Function,
     context: LuaContext,
     evt: LuaEvt,
-) -> mlua::Result<i32> {
-    match func.call((context, evt)) {
-        Ok(ret) => Ok(ret),
+) -> mlua::Result<bool> {
+    match func.call::<mlua::Value>((context, evt)) {
+        Ok(mlua::Value::Boolean(value)) => Ok(value),
+        Ok(mlua::Value::Integer(value)) => Ok(value == 0),
+        Ok(mlua::Value::Number(value)) => Ok(value == 0.0),
+        Ok(_) => Ok(true),
         Err(e) => {
             tracing::debug!("Lua trigger function returned error: {:?}", e);
             Err(e)

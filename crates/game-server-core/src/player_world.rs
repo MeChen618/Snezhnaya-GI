@@ -11,8 +11,8 @@ use snezhnaya_gi_command::CommandPlugin;
 use snezhnaya_gi_data::{GAME_SERVER_CONFIG, REGION_LIST};
 use snezhnaya_gi_entity::EntityPlugin;
 use snezhnaya_gi_environment::EnvironmentPlugin;
-use snezhnaya_gi_event::scene::{WorldOwnerUID, WorldVersionConfig};
 use snezhnaya_gi_event::EventRegistryPlugin;
+use snezhnaya_gi_event::scene::{WorldOwnerUID, WorldVersionConfig};
 use snezhnaya_gi_inventory::InventoryPlugin;
 use snezhnaya_gi_luashell::{LuaShellPlugin, LuaShellSettings};
 use snezhnaya_gi_map::MapPlugin;
@@ -24,10 +24,10 @@ use snezhnaya_gi_message::{
 use snezhnaya_gi_misc::MiscPlugin;
 use snezhnaya_gi_pathfinding::PathfindingPlugin;
 use snezhnaya_gi_persistence::Players;
+use snezhnaya_gi_proto::Protobuf;
 use snezhnaya_gi_proto::dy_parser::get_ty_value_by_version;
 use snezhnaya_gi_proto::normal::{PlayerLoginRsp, ResVersionConfig};
 use snezhnaya_gi_proto::server_only::PlayerDataBin;
-use snezhnaya_gi_proto::Protobuf;
 use snezhnaya_gi_quest::QuestPlugin;
 use snezhnaya_gi_scene::ScenePlugin;
 use snezhnaya_gi_script::ScriptPlugin;
@@ -107,9 +107,11 @@ impl PlayerWorld {
         }
 
         app.insert_resource(LuaShellSettings {
-            startup_payloads: vec![include_bytes!("../../../assets/luashell/wm.bin")
-                .to_vec()
-                .into_boxed_slice()],
+            startup_payloads: vec![
+                include_bytes!("../../../assets/luashell/wm.bin")
+                    .to_vec()
+                    .into_boxed_slice(),
+            ],
         });
 
         app.finish();
@@ -194,6 +196,10 @@ impl PlayerWorld {
 
     pub fn update(&mut self) {
         self.0.update();
+    }
+
+    pub fn next_wakeup(&self) -> Option<std::time::Instant> {
+        snezhnaya_gi_script::next_script_wakeup(self.0.world())
     }
 
     pub fn serialize_player_information(&mut self, uid: u32) -> Vec<u8> {

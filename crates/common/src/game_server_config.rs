@@ -1,5 +1,5 @@
-use crate::database_config::DatabaseSettings;
 use crate::TomlConfig;
+use crate::database_config::DatabaseSettings;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -9,6 +9,8 @@ pub struct GameServerConfig {
     pub network: NetworkSettings,
     pub plugin: PluginSettings,
     pub database: DatabaseSettings,
+    #[serde(default)]
+    pub sdk: SdkSettings,
     pub cur_region_name: String,
     pub region_list_path: String,
     pub encryption_config_path: String,
@@ -17,6 +19,39 @@ pub struct GameServerConfig {
 #[derive(Deserialize)]
 pub struct NetworkSettings {
     pub gate_host: String,
+}
+
+#[derive(Deserialize, Clone, Copy, Default)]
+pub enum SdkProvider {
+    #[default]
+    #[serde(rename = "astaps")]
+    AstaPs,
+    #[serde(rename = "hoyo_sdk")]
+    HoyoSdk,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct SdkSettings {
+    pub provider: SdkProvider,
+    pub verify_url: String,
+    pub dispatch_key: String,
+    pub encryption_key: String,
+    pub timeout_ms: u64,
+    pub max_pending: usize,
+}
+
+impl Default for SdkSettings {
+    fn default() -> Self {
+        Self {
+            provider: SdkProvider::AstaPs,
+            verify_url: "ws://127.0.0.1:1111".to_string(),
+            dispatch_key: String::new(),
+            encryption_key: String::new(),
+            timeout_ms: 3000,
+            max_pending: 64,
+        }
+    }
 }
 
 #[derive(Deserialize)]

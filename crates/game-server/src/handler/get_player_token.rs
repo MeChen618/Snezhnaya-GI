@@ -2,24 +2,70 @@ use super::Session;
 use crate::AppState;
 use common::language::Language;
 use common::player_cache::{
-    cache_set_language, cache_set_online_status, is_player_online, PlayerStatusType,
+    PlayerStatusType, cache_set_language, cache_set_online_status, is_player_online,
 };
+use rand::RngCore;
 use snezhnaya_gi_encryption::xor::{MhyXorpad, XorpadGenerationMethod};
 use snezhnaya_gi_proto::normal::{GetPlayerTokenReq, GetPlayerTokenRsp};
 use snezhnaya_gi_proto::retcode::Retcode;
-use rand::RngCore;
 
-pub fn process_message(
-    state: &AppState,
-    session: &Session,
-    req: GetPlayerTokenReq,
+pub struct VerifiedToken {
+    request: GetPlayerTokenReq,
     uid: u32,
-) -> GetPlayerTokenRsp {
+    xor_pad: MhyXorpad,
+    response: GetPlayerTokenRsp,
+}
+
+pub async fn verify(state: &AppState, request: GetPlayerTokenReq) -> Result<VerifiedToken, i32> {
+    if request.client_rand_key.is_empty() || request.client_rand_key.len() > 8192 {
+        return Err(Retcode::RetTokenParamError.into());
+    }
+    let mut response = GetPlayerTokenRsp::default();
+    let xor_pad = gen_session_key(state, &request, &mut response)
+        .ok_or(i32::from(Retcode::RetTokenParamError))?;
+    state
+        .sdk
+        .verify(&request.account_uid, &request.account_token)
+        .await
+        .map_err(|error| match error {
+            crate::sdk::VerifyError::Invalid => i32::from(Retcode::RetAccountVeirfyError),
+            crate::sdk::VerifyError::Banned => i32::from(Retcode::RetAccountFreeze),
+            crate::sdk::VerifyError::Unavailable => {
+                tracing::warn!(
+                    "SDK verification unavailable; check the service address and dispatch keys"
+                );
+                i32::from(Retcode::RetSystemBusy)
+            }
+        })?;
+    // 校验成功后才分配角色 UID，错误令牌不会创建账号映射。
+    let uid = state
+        .db_handle
+        .fetch_user_uid(request.account_uid.clone())
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "could not allocate player UID");
+            i32::from(Retcode::RetSystemBusy)
+        })?;
+    Ok(VerifiedToken {
+        request,
+        uid,
+        xor_pad,
+        response,
+    })
+}
+
+pub fn complete(session: &Session, verified: VerifiedToken) -> GetPlayerTokenRsp {
+    let VerifiedToken {
+        request: req,
+        uid,
+        xor_pad,
+        response,
+    } = verified;
     let language = Language::from(req.lang);
 
-    let mut rsp = GetPlayerTokenRsp {
+    let rsp = GetPlayerTokenRsp {
         retcode: Retcode::RetFail.into(),
-        ..Default::default()
+        ..response
     };
 
     //if online
@@ -42,10 +88,6 @@ pub fn process_message(
         tracing::debug!("repeated GetPlayerTokenReq (account_uid: {account_uid})");
         return rsp;
     }
-
-    let Some(xor_pad) = gen_session_key(state, &req, &mut rsp) else {
-        return rsp;
-    };
 
     let _ = session.xor_pad.set(xor_pad);
     let _ = session.account_uid.set(req.account_uid);
@@ -86,10 +128,7 @@ fn gen_session_key(
     };
 
     let Ok(client_rand_key) = base64_simd::STANDARD.decode_to_vec(&req.client_rand_key) else {
-        tracing::debug!(
-            "failed to decode client_rand_key as base64, content: {}",
-            req.client_rand_key
-        );
+        tracing::debug!("failed to decode client_rand_key as base64");
         return None;
     };
 
