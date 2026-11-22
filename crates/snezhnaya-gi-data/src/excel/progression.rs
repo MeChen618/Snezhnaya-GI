@@ -218,6 +218,7 @@ pub struct ProgressionConfig {
     pub targets: BTreeMap<u32, Target>,
     pub activity_watchers: BTreeMap<u32, ActivityWatcher>,
     pub player_level_exp: BTreeMap<u32, u32>,
+    pub player_level_rewards: BTreeMap<u32, u32>,
     pub chapter_end_quests: BTreeMap<u32, u32>,
 }
 
@@ -246,6 +247,7 @@ impl ProgressionConfig {
         struct PlayerLevel {
             level: u32,
             exp: u32,
+            reward_id: u32,
         }
         #[derive(Deserialize, Default)]
         #[serde(default, rename_all = "camelCase")]
@@ -277,6 +279,7 @@ impl ProgressionConfig {
             config_id: u32,
             price_tier: String,
         }
+        let player_levels = rows::<PlayerLevel>(root, "PlayerLevelExcelConfigData")?;
         let data = Self {
             pass_product_tiers: rows::<ProductPlay>(root, "ProductPlayDetailConfigData")?
                 .into_iter()
@@ -351,9 +354,11 @@ impl ProgressionConfig {
                 .into_iter()
                 .map(|r| (r.id, r))
                 .collect(),
-            player_level_exp: rows::<PlayerLevel>(root, "PlayerLevelExcelConfigData")?
-                .into_iter()
-                .map(|r| (r.level, r.exp))
+            player_level_exp: player_levels.iter().map(|r| (r.level, r.exp)).collect(),
+            player_level_rewards: player_levels
+                .iter()
+                .filter(|r| r.reward_id != 0)
+                .map(|r| (r.level, r.reward_id))
                 .collect(),
             chapter_end_quests: rows::<Chapter>(root, "ChapterExcelConfigData")?
                 .into_iter()

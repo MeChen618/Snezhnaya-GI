@@ -665,12 +665,56 @@ fn add_points(state: &mut b::BattlePassScheduleBin, mut points: u32) {
     }
 }
 
+fn notify_level_rewards(player: &b::PlayerDataBin, output: &MessageOutput) {
+    output.send(
+        player.uid,
+        "PlayerLevelRewardUpdateNotify",
+        PlayerLevelRewardUpdateNotify {
+            level_list: player
+                .basic_bin
+                .as_ref()
+                .map(|b| b.reward_taken_level_list.clone())
+                .unwrap_or_default(),
+        },
+    );
+}
+
+fn claim_level_reward(
+    player: &mut b::PlayerDataBin,
+    level: u32,
+    output: &MessageOutput,
+) -> Result<u32, Retcode> {
+    let reward = *ProgressionConfig::get()
+        .player_level_rewards
+        .get(&level)
+        .ok_or(Retcode::RetItemInvalidTarget)?;
+    let basic = player.basic_bin.as_ref().ok_or(Retcode::RetFail)?;
+    if level > basic.level {
+        return Err(Retcode::RetPlayerLevelLessThan);
+    }
+    if basic.reward_taken_level_list.contains(&level) {
+        return Err(Retcode::RetRewardHasTaken);
+    }
+    let items = reward_items([reward])?;
+    let change = inventory::transact(player, &Amounts::new(), &items, &[])?;
+    // 发奖成功后再记领取状态，背包不足时仍可重试。
+    player
+        .basic_bin
+        .as_mut()
+        .unwrap()
+        .reward_taken_level_list
+        .push(level);
+    inventory::notify_transaction(output, player, &change);
+    Ok(reward)
+}
+
 pub fn login(mut players: ResMut<Players>, output: Res<MessageOutput>) {
     let time = now();
     for player in players.values_mut() {
         refresh(player, time);
         notify_pass(player, &output);
         notify_investigation(player, &output);
+        notify_level_rewards(player, &output);
     }
 }
 
@@ -693,6 +737,7 @@ pub fn handle(
                 | "TakeInvestigationTargetRewardReq"
                 | "TakeInvestigationRewardReq"
                 | "InvestigationReadQuestDailyNotify"
+                | "TakePlayerLevelRewardReq"
         ) {
             continue;
         }
@@ -701,6 +746,21 @@ pub fn handle(
         };
         refresh(player, now());
         match name {
+            "TakePlayerLevelRewardReq" => {
+                if let Some(req) = message.decode::<TakePlayerLevelRewardReq>() {
+                    let result = claim_level_reward(player, req.level, &output);
+                    output.send(
+                        player.uid,
+                        "TakePlayerLevelRewardRsp",
+                        TakePlayerLevelRewardRsp {
+                            level: req.level,
+                            reward_id: result.as_ref().copied().unwrap_or_default(),
+                            retcode: result.err().map(i32::from).unwrap_or_default(),
+                        },
+                    );
+                    notify_level_rewards(player, &output);
+                }
+            }
             "GetBattlePassProductReq" => {
                 let play_type = message
                     .decode_json()

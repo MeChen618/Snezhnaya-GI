@@ -6,6 +6,7 @@ mod gm;
 mod item;
 mod production;
 mod reliquary;
+mod shop;
 pub mod transaction;
 
 pub struct InventoryPlugin;
@@ -19,6 +20,7 @@ impl Plugin for InventoryPlugin {
                 (
                     production::handle,
                     reliquary::handle,
+                    shop::handle,
                     item::item_command_handler,
                     item::item_add_handler,
                     item::update_player_store,
