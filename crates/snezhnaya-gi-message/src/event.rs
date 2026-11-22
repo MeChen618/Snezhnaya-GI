@@ -1,7 +1,7 @@
 use crate::get_player_version;
 use bevy_ecs::prelude::*;
-use snezhnaya_gi_proto::packet_head::PacketHead;
 use serde::{de, Serialize};
+use snezhnaya_gi_proto::packet_head::PacketHead;
 use snezhnaya_gi_proto::Protobuf;
 
 #[derive(Message)]
@@ -36,6 +36,14 @@ impl ClientMessageEvent {
         get_player_version!(&self.0.user_id)
     }
 
+    pub fn decode_json(&self) -> Option<serde_json::Value> {
+        snezhnaya_gi_proto::dy_parser::decode_json_by_name_version(
+            &self.version(),
+            self.message_name(),
+            &self.2,
+        )
+    }
+
     pub fn decode<T: Default + Serialize + Protobuf>(&self) -> Option<T>
     where
         T: for<'a> de::Deserialize<'a>,
@@ -43,7 +51,9 @@ impl ClientMessageEvent {
         let binding = get_player_version!(&self.0.user_id);
         let version = binding.as_str();
 
-        let Some(binding) = snezhnaya_gi_proto::dy_parser::get_name_by_cmd_id_version(version, self.1) else {
+        let Some(binding) =
+            snezhnaya_gi_proto::dy_parser::get_name_by_cmd_id_version(version, self.1)
+        else {
             return None;
         };
         let message_name = binding.as_str();

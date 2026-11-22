@@ -102,6 +102,7 @@ pub fn transact(
         .item_map
         .clone();
     let mut counter = player.guid_counter;
+    let mut experience = None;
     let mut change = InventoryChange {
         rewards: rewards.clone(),
         ..Default::default()
@@ -174,6 +175,33 @@ pub fn transact(
     }
     for (&id, &count) in rewards {
         if count == 0 {
+            continue;
+        }
+        if id == 102 {
+            let basic = player
+                .basic_bin
+                .as_ref()
+                .ok_or(Retcode::RetItemInvalidTarget)?;
+            let table = &progression::ProgressionConfig::get().player_level_exp;
+            let max_level = *table.keys().max().ok_or(Retcode::RetItemInvalidTarget)?;
+            let mut level = basic.level.max(1);
+            let mut exp = u64::from(basic.exp) + u64::from(count);
+            while level < max_level {
+                let cost = *table.get(&level).ok_or(Retcode::RetItemInvalidTarget)?;
+                if cost == 0 || exp < u64::from(cost) {
+                    break;
+                }
+                exp -= u64::from(cost);
+                level += 1;
+            }
+            experience = Some((
+                level,
+                if level >= max_level {
+                    0
+                } else {
+                    exp.try_into().map_err(|_| Retcode::RetItemExceedLimit)?
+                },
+            ));
             continue;
         }
         if let Some(value) = currency_mut(&mut items, id) {
@@ -255,6 +283,17 @@ pub fn transact(
         .collect();
     player.item_bin = Some(items);
     player.guid_counter = counter;
+    if let Some((level, exp)) = experience {
+        let basic = player.basic_bin.as_mut().unwrap();
+        basic.level = level;
+        basic.exp = exp;
+    }
+    for (&id, &count) in costs {
+        snezhnaya_gi_persistence::record_progress(player, "cost", id, count);
+    }
+    for (&id, &count) in rewards {
+        snezhnaya_gi_persistence::record_progress(player, "obtain", id, count);
+    }
     Ok(change)
 }
 
@@ -361,11 +400,27 @@ pub fn notify_transaction(
             },
         );
     }
+    let mut properties = currency_properties(items);
+    if let Some(basic) = &player.basic_bin {
+        for (id, value) in [
+            (PROP_PLAYER_LEVEL, basic.level),
+            (PROP_PLAYER_EXP, basic.exp),
+        ] {
+            properties.insert(
+                id,
+                PropValue {
+                    r#type: id,
+                    val: i64::from(value),
+                    value: Some(prop_value::Value::Ival(i64::from(value))),
+                },
+            );
+        }
+    }
     output.send(
         player.uid,
         "PlayerPropNotify",
         PlayerPropNotify {
-            prop_map: currency_properties(items),
+            prop_map: properties,
         },
     );
     if !change.rewards.is_empty() {

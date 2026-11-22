@@ -24,3 +24,5 @@ encryption_key = ""
 timeout_ms = 3000
 max_pending = 64
 # hoyo-sdk 则改为 provider = "hoyo_sdk"，verify_url 填完整的 /hk4e_cn/mdk/shield/api/verify 地址。
+
+# 幽境排期读取资源；其他活动可用 [[activities]] 配置 ID、类型、排期和起止时间。

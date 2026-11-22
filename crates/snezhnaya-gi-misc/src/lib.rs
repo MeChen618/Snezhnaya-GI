@@ -1,4 +1,6 @@
 use bevy_app::prelude::*;
+mod activity;
+mod progression;
 use bevy_ecs::prelude::*;
 
 use common::player_cache::{cache_get_client_time, cache_get_is_pause, cache_set_is_pause};
@@ -16,6 +18,9 @@ pub struct MiscPlugin;
 impl Plugin for MiscPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneTime::default())
+            .add_systems(PreStartup, (progression::login, activity::login).chain())
+            .add_systems(Update, (progression::handle, activity::handle))
+            .add_systems(PostUpdate, progression::observe)
             .add_systems(Startup, init_scene_time)
             .add_systems(PreUpdate, set_pause)
             .add_systems(PreUpdate, client_set_game_time)

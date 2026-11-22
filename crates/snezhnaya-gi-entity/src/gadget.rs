@@ -277,14 +277,18 @@ pub fn handle_gadget_interact(
     mut events: MessageReader<GadgetInteractEvent>,
     index: Res<EntityById>,
     mut commands: Commands,
-    players: Res<Players>,
-    gadgets: Query<(
-        &Level,
-        &Transform,
-        Option<&GadgetContent>,
-        &DropTag,
-        &ChestDropId,
-    )>,
+    mut players: ResMut<Players>,
+    gadgets: Query<
+        (
+            &GadgetID,
+            &Level,
+            &Transform,
+            Option<&GadgetContent>,
+            &DropTag,
+            &ChestDropId,
+        ),
+        Without<ToBeRemovedMarker>,
+    >,
     mut item_add_events: MessageWriter<ItemAddEvent>,
     mut item_drop_events: MessageWriter<ItemDropEvent>,
     mut disappear_events: MessageWriter<EntityDisappearEvent>,
@@ -296,11 +300,16 @@ pub fn handle_gadget_interact(
         snezhnaya_gi_data::excel::env_animal_gather_excel_config_collection::get(),
     );
 
-    for GadgetInteractEvent(player_uid, gadget_id, gadget_entity_id) in events.read() {
+    let mut consumed = std::collections::HashSet::new();
+    for GadgetInteractEvent(player_uid, _, gadget_entity_id) in events.read() {
+        if players.get(*player_uid).is_none() || !consumed.insert(*gadget_entity_id) {
+            continue;
+        }
         match index.0.get(&gadget_entity_id) {
             None => {}
             Some(entity) => match gadgets.get(*entity) {
-                Ok((level, transform, gadget_content, drop_tag, chest_drop_id)) => {
+                Ok((actual_id, level, transform, gadget_content, drop_tag, chest_drop_id)) => {
+                    let gadget_id = &actual_id.0;
                     // animal
                     match env_animal_gather_excel_config_collection_clone.get(gadget_id) {
                         None => {}
@@ -414,6 +423,17 @@ pub fn handle_gadget_interact(
                         drop_id = chest_drop_id.0;
                     }
                     if drop_id != 0 {
+                        if gadget_excel_config_collection_clone
+                            .get(gadget_id)
+                            .is_some_and(|c| c.r#type == EntityType::Chest)
+                        {
+                            if let Some(player) = players.get_mut(*player_uid) {
+                                snezhnaya_gi_persistence::record_progress(player, "chest", 0, 1);
+                                snezhnaya_gi_persistence::record_progress(
+                                    player, "chest", *gadget_id, 1,
+                                );
+                            }
+                        }
                         tracing::debug!("drop_id is {}", drop_id);
                         let drop_vec = resolve_drop(drop_id, 1);
                         tracing::debug!("drop_vec is {:#?}", drop_vec);
@@ -452,7 +472,8 @@ pub fn handle_gadget_interact(
                                 };
 
                                 let dungeon_excel_config_collection_clone = std::sync::Arc::clone(
-                                    snezhnaya_gi_data::excel::dungeon_excel_config_collection::get(),
+                                    snezhnaya_gi_data::excel::dungeon_excel_config_collection::get(
+                                    ),
                                 );
 
                                 match dungeon_excel_config_collection_clone
@@ -462,7 +483,10 @@ pub fn handle_gadget_interact(
                                     Some(dungeon_config) => {
                                         if dungeon_config.statue_drop != 0 {
                                             let drop_id = dungeon_config.statue_drop;
-                                            tracing::debug!("cur_dungeon_id is {}", player_dungeon_bin.cur_dungeon_id);
+                                            tracing::debug!(
+                                                "cur_dungeon_id is {}",
+                                                player_dungeon_bin.cur_dungeon_id
+                                            );
                                             tracing::debug!("drop_id is {}", drop_id);
                                             let drop_vec = resolve_drop(drop_id, 1);
                                             tracing::debug!("drop_vec is {:#?}", drop_vec);

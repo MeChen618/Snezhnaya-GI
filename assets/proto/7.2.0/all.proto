@@ -771,7 +771,7 @@ message ItemGivingReq {
 message LeyLineChallengeAvatarSelection {
   uint32 difficulty = 6;
   repeated uint32 avatar_id_list = 7;
-  uint32 KDBLHFFGAJL = 14;
+  uint32 CIPECILEKHK = 14;
 }
 
 // CmdId: 6141
@@ -1102,9 +1102,9 @@ message _BeyondBulletTriggerAttackEventMpActionConfig {
 }
 
 // CmdId: 22026
-message OJIHGNOBEJC {
-  ResinCostType.Value MIMDJFDCBDI = 1;
-  uint32 ODEBNMEHOIM = 4;
+message LeyLineChallengeTakeRewardReq {
+  ResinCostType.Value resin_cost_type = 1;
+  uint32 resin_cost_count = 4;
 }
 
 message _InazumaBadmintonLevelInfo {
@@ -1503,10 +1503,10 @@ message GetPlayerTokenReq {
 message LeyLineChallengeRecord {
   bool is_finished = 1;
   uint32 cost_time = 3;
-  LeyLineChallengeRecordExtra PHGNBOEGAAP = 4;
+  LeyLineChallengeRecordExtra JHNNEEDMAOH = 4;
   repeated LeyLineChallengeRecordTeam team_info_list = 9;
   repeated uint64 equip_guid_list = 13;
-  uint32 KDBLHFFGAJL = 15;
+  uint32 CIPECILEKHK = 15;
 }
 
 // CmdId: 27539
@@ -3537,9 +3537,9 @@ message AbilityActionSetRandomOverrideMapValue {
 }
 
 // CmdId: 5027
-message KCGMPOCIJEA {
+message LeyLineChallengeGetReliquaryListRsp {
   int32 retcode = 4;
-  repeated uint32 EBOBNMJBDFF = 9;
+  repeated uint32 reliquary_id_list = 9;
 }
 
 message LNJLMNAGHOL {
@@ -6609,7 +6609,7 @@ message DOJOAEOKAFA {
 }
 
 // CmdId: 1139
-message GNJFJBMEPFH {
+message LeyLineChallengeSetTeamRsp {
   int32 retcode = 6;
 }
 
@@ -7877,7 +7877,7 @@ message DNGDDILGCHD {
 }
 
 // CmdId: 26896
-message ELOEHJBGENJ {
+message LeyLineChallengeTerminateRsp {
   int32 retcode = 11;
 }
 
@@ -8754,8 +8754,8 @@ message IBJEJIGBDHB {
 }
 
 // CmdId: 9644
-message LLKAANBCDLN {
-  GADILCIHHJO EGIHEKFPBNB = 3;
+message LeyLineChallengeDataNotify {
+  LeyLineChallengeDataState data = 3;
 }
 
 message IDKHNEHMMFI {
@@ -9042,7 +9042,7 @@ message MNOGAGKAEIL {
 }
 
 // CmdId: 1516
-message EKIONIHBGKA {
+message LeyLineChallengeGetReliquaryListReq {
 }
 
 message _BeyondEquipStuffConfigTemplate {
@@ -9690,7 +9690,7 @@ message CFHEBJCCLAI {
 // CmdId: 27097
 message LeyLineChallengeSetTeamReq {
   uint32 difficulty = 2;
-  repeated CGIFNLOOHCA team_list = 12;
+  repeated LeyLineChallengeTeam team_list = 12;
 }
 
 message LCGKPGENBCH {
@@ -10968,11 +10968,11 @@ message _AcrobaticsBattleDetailInfo {
 }
 
 // CmdId: 26138
-message HCPCKNCIKPN {
+message LeyLineChallengeStartReq {
   repeated uint32 LEMOEKHDMCK = 2;
-  bool EEEEIMKFKCL = 3;
-  repeated CGIFNLOOHCA team_list = 7;
-  repeated uint32 NKMEBMGFMLO = 15;
+  bool IPMMPJJEFJE = 3;
+  repeated LeyLineChallengeTeam team_list = 7;
+  repeated uint32 EBCCJHHJGAI = 15;
 }
 
 // CmdId: 638
@@ -12731,7 +12731,7 @@ message _DiversityBattleEnterInfo {
   bool _is_restart = 1;
   uint32 difficulty_id = 2;
   bool JDACJEILAEN = 4;
-  repeated CGIFNLOOHCA team_list = 7;
+  repeated LeyLineChallengeTeam team_list = 7;
   uint32 FOOJAIKBPIM = 11;
 }
 
@@ -13617,11 +13617,11 @@ message AMMDJLKGIFH {
   uint32 submit_limit = 13;
 }
 
-message PCIOFMJOGAP {
+message LeyLineChallengeTeamBuilderPlayer {
   uint32 uid = 1;
   repeated _DungeonTeamBuilderTeamInfo team_info_list = 2;
   _DungeonTeamBuilderPlayerState.Value state = 3;
-  uint32 HPFAOMDOKOG = 4;
+  uint32 LCDDOBDBDDF = 4;
 }
 
 message LBDBGHDLHBB {
@@ -14155,18 +14155,18 @@ message EONAIHGPCOD {
   float speed = 15;
 }
 
-message CFFHABAFOEO {
-  repeated uint32 KOCJPPIAOGM = 2;
-  repeated LeyLineChallengeScheduleRecord DDINCGGDPJG = 3;
-  LeyLineChallengeAvatarSnapshots JDGHPHOPBFC = 4;
-  bool NDPLCGLJOHG = 6;
-  uint32 CNLCIBODPKN = 7;
-  uint32 BJEIMALCENI = 9;
-  uint64 GCOBBEGBFEO = 10;
-  uint32 FOKNCMIKGOA = 12;
-  repeated LeyLineChallengeScheduleRecord NMBDIMCAKBL = 13;
-  uint32 HKFJOKDMPBI = 14;
-  repeated LeyLineChallengeScheduleAvatars AJNPEMJPEAM = 15;
+message LeyLineChallengeData {
+  repeated uint32 favorite_reliquary_id_list = 2;
+  repeated LeyLineChallengeScheduleRecord OFIONPDHDPJ = 3;
+  LeyLineChallengeAvatarSnapshots ICDNIMONCCE = 4;
+  bool BAHBANBDBON = 6;
+  uint32 GLKEFHEKCPO = 7;
+  uint32 reliquary_id = 9;
+  uint64 BBMMIHAFFOE = 10;
+  uint32 activity_schedule_id = 12;
+  repeated LeyLineChallengeScheduleRecord FODFAOBLHEA = 13;
+  uint32 DNIAFBOHIPC = 14;
+  repeated LeyLineChallengeScheduleAvatars BMJJCOBBGGH = 15;
 }
 
 message OLDBGEDGCMG {
@@ -16412,7 +16412,7 @@ message ActivityInfo {
     PhotoActivityDetailInfo PhotoInfo = 40;
     MistTrialActivityDetailInfo MistTrialActivityInfo = 67;
     ChannelerSlabActivityDetailInfo ChallnelerSlabInfo = 89;
-    _LeyLineChallengeDetailInfo LeyLineChallengeDetailInfo = 90;
+    LeyLineChallengeDetailInfo LeyLineChallengeDetailInfo = 90;
     _AutochessDetailInfo AutochessInfo = 95;
     _LunaRiteV2DetailInfo LunaRiteV2Info = 115;
     ExpeditionActivityDetailInfo ExpeditionInfo = 120;
@@ -17313,9 +17313,9 @@ message HomeAvatarAllFinishRewardNotify {
 }
 
 // CmdId: 29973
-message ILEKNHDFPDB {
+message LeyLineChallengeRetryRsp {
   int32 retcode = 4;
-  repeated uint32 NKMEBMGFMLO = 10;
+  repeated uint32 EBCCJHHJGAI = 10;
 }
 
 message FleurFairReplayMiniGameRsp {
@@ -17721,7 +17721,7 @@ message DMJCELOEOMO {
 
 message _DiversityBattleLevelInfo {
   _DiversityBattleSocialBrief _record_social_brief = 7;
-  repeated CGIFNLOOHCA team_list = 13;
+  repeated LeyLineChallengeTeam team_list = 13;
 }
 
 message EMPLFAOMHPP {
@@ -18691,7 +18691,7 @@ message PlayerConfirmMatchReq {
 }
 
 message LeyLineChallengeScheduleAvatars {
-  repeated LeyLineChallengeAvatarRecord CCBOIOKIMJI = 1;
+  repeated LeyLineChallengeAvatarRecord CPDKHNHIJBM = 1;
   uint32 schedule_id = 13;
 }
 
@@ -19912,9 +19912,9 @@ message NBIOHHKGNCL {
 }
 
 // CmdId: 25464
-message CHMAEBPJPEI {
+message LeyLineChallengeSetRoundTeamRsp {
   repeated uint32 LEMOEKHDMCK = 8;
-  repeated uint32 NKMEBMGFMLO = 9;
+  repeated uint32 EBCCJHHJGAI = 9;
   int32 retcode = 10;
 }
 
@@ -20952,10 +20952,10 @@ message LFGMMJLBMFP {
 }
 
 // CmdId: 20472
-message LODOHCKJKKF {
-  repeated uint32 NKMEBMGFMLO = 3;
+message LeyLineChallengeGetPopularAvatarRsp {
+  repeated uint32 EBCCJHHJGAI = 3;
   int32 retcode = 6;
-  uint32 CNLCIBODPKN = 14;
+  uint32 GLKEFHEKCPO = 14;
 }
 
 // CmdId: 4585
@@ -21477,19 +21477,19 @@ message ActivityTakeScoreRewardReq {
 }
 
 // CmdId: 21710
-message KKMDHKONBFL {
+message LeyLineChallengeStageNotify {
   string transaction = 1;
   fixed64 stage_begin_time = 2;
-  GBKBDMFHNIH.Value stage = 4;
-  bool MFPLEGBELKA = 5;
-  repeated uint32 NKMEBMGFMLO = 6;
-  repeated uint32 MNNFELLPAHF = 7;
-  SceneGalleryInfo JKAFHODFKMK = 9;
+  LeyLineChallengeStage.Value stage = 4;
+  bool POIOGNELIEA = 5;
+  repeated uint32 EBCCJHHJGAI = 6;
+  repeated uint32 reward_claimed_uid_list = 7;
+  SceneGalleryInfo gallery_info = 9;
   repeated LeyLineChallengeRecord record_list = 10;
-  repeated PCIOFMJOGAP PPIFEIGFBLA = 11;
+  repeated LeyLineChallengeTeamBuilderPlayer team_builder_list = 11;
   uint32 difficulty = 12;
   uint32 owner_uid = 13;
-  uint32 _cur_round_num = 14;
+  uint32 cur_round_num = 14;
   repeated LeyLineChallengePlayer player_list = 15;
 }
 
@@ -21517,7 +21517,7 @@ message NLIIDGIBCJI {
 }
 
 // CmdId: 158
-message HFPCMAKICNO {
+message LeyLineChallengeTerminateReq {
 }
 
 // CmdId: 28361
@@ -21737,7 +21737,7 @@ message NIFHBGFLNNB {
 message LeyLineChallengeAvatarRecord {
   LeyLineChallengeAvatarRecordSource.Value source = 1;
   uint32 avatar_id = 8;
-  uint32 FHCDCKAKKFH = 13;
+  uint32 GOKEIFGHDFB = 13;
 }
 
 // CmdId: 24562
@@ -22959,9 +22959,9 @@ message LeyLineChallengePlayer {
   string online_id = 3;
   ProfilePicture profile_picture = 5;
   string nickname = 11;
-  bool DJDOGLMCBAN = 12;
+  bool FCFHNGOICIG = 12;
   uint32 uid = 13;
-  uint32 DHFFJFGIKMJ = 14;
+  uint32 CHKFDBLAGND = 14;
 }
 
 message CoinCollectTeamInfoData {
@@ -24518,9 +24518,9 @@ message QuestDestroyNpcRsp {
 }
 
 message LeyLineChallengeDifficultyInfo {
-  repeated uint32 COFLAFCCKAJ = 4;
+  repeated uint32 DNIJJMFOJLI = 4;
   uint32 difficulty = 6;
-  repeated uint32 AENNBIAADFN = 10;
+  repeated uint32 CPHPGPDCOGO = 10;
 }
 
 message GMMDPKAICLG {
@@ -25223,7 +25223,7 @@ message EKHLDIHBPHG {
   uint32 owner_uid = 8;
   PHHIINIFPEM detail_info = 11;
   fixed64 OPNACDIFEBC = 12;
-  repeated PCIOFMJOGAP player_info_list = 14;
+  repeated LeyLineChallengeTeamBuilderPlayer player_info_list = 14;
 }
 
 message _BeyondProfilePictureSlotInfo {
@@ -26246,7 +26246,7 @@ message KGEJFOBPGHL {
 // CmdId: 17
 message FMCEJCKNHDN {
   fixed64 OPNACDIFEBC = 3;
-  repeated PCIOFMJOGAP player_info_list = 9;
+  repeated LeyLineChallengeTeamBuilderPlayer player_info_list = 9;
   uint32 KDBLHFFGAJL = 11;
 }
 
@@ -27284,8 +27284,8 @@ message ActivityTakeScoreRewardRsp {
 }
 
 // CmdId: 28464
-message FIIGCHHMLHC {
-  CFFHABAFOEO IAPPAFDCDAD = 5;
+message LeyLineChallengeDataUpdateNotify {
+  LeyLineChallengeData data = 5;
 }
 
 message HCBDBPOOKPL {
@@ -29402,10 +29402,10 @@ message FOMKEJOABDN {
 
 // CmdId: 20391
 message LeyLineChallengeEnterReq {
-  repeated uint32 NKMEBMGFMLO = 2;
+  repeated uint32 EBCCJHHJGAI = 2;
   uint32 difficulty = 4;
-  bool EEEEIMKFKCL = 5;
-  repeated CGIFNLOOHCA team_list = 13;
+  bool IPMMPJJEFJE = 5;
+  repeated LeyLineChallengeTeam team_list = 13;
 }
 
 // CmdId: 29386
@@ -30839,8 +30839,8 @@ message PCAAJBNFIDO {
 }
 
 // CmdId: 26534
-message HBABDAKOPED {
-  repeated uint32 NKMEBMGFMLO = 2;
+message LeyLineChallengeEnterRsp {
+  repeated uint32 EBCCJHHJGAI = 2;
   int32 retcode = 8;
 }
 
@@ -32473,12 +32473,12 @@ message GetUgcRsp {
 
 // CmdId: 26544
 message LeyLineChallengeSettleNotify {
-  uint32 _cur_round_num = 1;
+  uint32 cur_round_num = 1;
   bool OKGNELDLCDK = 2;
   bool is_new_record = 3;
   bool FJFILEJJCPN = 4;
   bool is_succ = 5;
-  repeated uint32 AGAGAOOEEIP = 6;
+  repeated uint32 CKGDEEGEAPO = 6;
   bool MPCBAIDONJN = 7;
   bool HOCNBJHDCLK = 8;
   LeyLineChallengeRecord current_record = 9;
@@ -32674,8 +32674,8 @@ message _AkaFesDetailInfo {
 }
 
 // CmdId: 2440
-message BAACGBEOJKB {
-  uint32 CNLCIBODPKN = 15;
+message LeyLineChallengeGetPopularAvatarReq {
+  uint32 GLKEFHEKCPO = 15;
 }
 
 message GKEBLFEBBMC {
@@ -32851,11 +32851,11 @@ message DuelHeartDetailInfo {
 }
 
 // CmdId: 9785
-message IOOBGELKNKL {
-  uint32 EDJPGNJAECJ = 1;
+message LeyLineChallengeTakeRewardRsp {
+  uint32 old_resin_consumed = 1;
   int32 retcode = 10;
-  uint32 KKGEGBPPMNI = 12;
-  repeated ItemParam PEABEMFFPKH = 13;
+  uint32 old_bonus_resin_consumed = 12;
+  repeated ItemParam item_list = 13;
 }
 
 message CAFAPKGPDJA {
@@ -33871,7 +33871,7 @@ message GCGChangeOnstageInfo {
 
 message LeyLineChallengeAvatarSnapshots {
   uint32 schedule_id = 4;
-  repeated LeyLineChallengeAvatarSnapshotList EGNGGCEGNPK = 12;
+  repeated LeyLineChallengeAvatarSnapshotList OJGFKLADIBP = 12;
 }
 
 message ADMCOOHJAFD {
@@ -34904,18 +34904,18 @@ message OGHHLJIDDJE {
   uint32 MGDEHPJLGHI = 14;
 }
 
-message _LeyLineChallengeDetailInfo {
-  LeyLineChallengeScheduleRecord APACAIFNENF = 2;
+message LeyLineChallengeDetailInfo {
+  LeyLineChallengeScheduleRecord CALPCBEBOHH = 2;
   repeated LeyLineChallengeDifficultyInfo difficulty_info_list = 3;
-  bool OBBFAHHKPBE = 4;
-  uint32 NMOCANNCHFA = 5;
-  uint32 ODHLBAHIGMK = 6;
-  uint64 BHKAKIPABLM = 7;
-  bool LLAGDOFKIEJ = 9;
-  LeyLineChallengeScheduleRecord JJPFPNPEGNG = 10;
-  repeated LeyLineChallengeScheduleRecord JAACFCAOGDG = 12;
-  CFFHABAFOEO IAPPAFDCDAD = 13;
-  repeated LeyLineChallengeAvatarSelection EDECFDDIFIB = 14;
+  bool OFBPKKNJJFN = 4;
+  uint32 resin_consumed = 5;
+  uint32 bonus_resin_consumed = 6;
+  uint64 HNBNPOEHDAA = 7;
+  bool NDBOPNDMGNM = 9;
+  LeyLineChallengeScheduleRecord FCKDCKLIPIL = 10;
+  repeated LeyLineChallengeScheduleRecord IELGPDLPPOH = 12;
+  LeyLineChallengeData HGEEJFIBCLH = 13;
+  repeated LeyLineChallengeAvatarSelection LDCNHAOBINH = 14;
 }
 
 message APABGJDGDIC {
@@ -39393,9 +39393,9 @@ message JKKDFAHLIEM {
 }
 
 // CmdId: 21538
-message JEPLODEKHCN {
+message LeyLineChallengeGetDataRsp {
   int32 retcode = 7;
-  CFFHABAFOEO IAPPAFDCDAD = 9;
+  LeyLineChallengeData data = 9;
 }
 
 // CmdId: 3902
@@ -47243,7 +47243,7 @@ message LIPKHOFKDOH {
   uint32 BNGIILAJJEG = 4;
 }
 
-message CGIFNLOOHCA {
+message LeyLineChallengeTeam {
   repeated _ActivityAvatarInfo avatar_list = 6;
 }
 
@@ -47554,10 +47554,10 @@ message PHNJOBFMDLM {
 }
 
 // CmdId: 3376
-message NIMHKICMKLI {
+message LeyLineChallengeStartRsp {
   repeated uint32 LEMOEKHDMCK = 1;
   int32 retcode = 4;
-  repeated uint32 NKMEBMGFMLO = 13;
+  repeated uint32 EBCCJHHJGAI = 13;
 }
 
 message _SceneGalleryFungusFighterV3Info {
@@ -50058,11 +50058,11 @@ message RoleCombatCardPreview {
 }
 
 // CmdId: 21181
-message GDOHIHDCLIO {
-  bool EEEEIMKFKCL = 5;
-  repeated uint32 NKMEBMGFMLO = 6;
-  CGIFNLOOHCA EIODHKFEMGO = 12;
-  uint32 KDBLHFFGAJL = 13;
+message LeyLineChallengeSetRoundTeamReq {
+  bool IPMMPJJEFJE = 5;
+  repeated uint32 EBCCJHHJGAI = 6;
+  LeyLineChallengeTeam team = 12;
+  uint32 round_id = 13;
 }
 
 // CmdId: 8383
@@ -50515,8 +50515,8 @@ message NCEJAINAOKD {
 }
 
 // CmdId: 7624
-message BDCCJKEDKCD {
-  uint32 BJEIMALCENI = 9;
+message LeyLineChallengeSelectReliquaryReq {
+  uint32 reliquary_id = 9;
 }
 
 message AGHCKMNMOFM {
@@ -51719,7 +51719,7 @@ message CJLCKOCNNKJ {
 }
 
 // CmdId: 2624
-message PIGNPEMAMLB {
+message LeyLineChallengeSelectReliquaryRsp {
   int32 retcode = 13;
 }
 
@@ -53472,7 +53472,7 @@ message GMNPDECIEGM {
 message LeyLineChallengeRecordTeam {
   repeated SocialShowAvatarInfo avatar_info_list = 6;
   uint32 uid = 13;
-  bool DJDOGLMCBAN = 15;
+  bool FCFHNGOICIG = 15;
 }
 
 message AbilityActionCreateTile {
@@ -53967,8 +53967,8 @@ message _BeyondShopTemplateClientProperty {
 }
 
 // CmdId: 22737
-message KGHPKGHBFEL {
-  repeated uint32 KOCJPPIAOGM = 10;
+message LeyLineChallengeSetFavoriteReliquaryReq {
+  repeated uint32 reliquary_id_list = 10;
 }
 
 // CmdId: 2060
@@ -56759,9 +56759,9 @@ message IIIHINAHOMO {
 }
 
 // CmdId: 6042
-message KEDNMKDFBKC {
-  repeated uint32 NKMEBMGFMLO = 9;
-  bool EEEEIMKFKCL = 12;
+message LeyLineChallengeRetryReq {
+  repeated uint32 EBCCJHHJGAI = 9;
+  bool IPMMPJJEFJE = 12;
 }
 
 message QuestVarOp {
@@ -57521,9 +57521,9 @@ message _SumeruAdventureTrainingDetailInfo {
 message LeyLineChallengeScheduleRecord {
   fixed64 timestamp = 6;
   repeated LeyLineChallengePlayer player_info_list = 7;
-  repeated LeyLineChallengeRecord record_list = 10;
+  repeated LeyLineChallengeRecord MJCPCDPFJHB = 10;
   uint32 schedule_id = 11;
-  bool IELFCKJIONP = 14;
+  bool AJHCBEKBNJO = 14;
   uint32 difficulty = 15;
 }
 
@@ -59593,7 +59593,7 @@ message PlayerHomeCompInfoNotify {
 }
 
 // CmdId: 4986
-message PHONHPLFIGG {
+message LeyLineChallengeGetDataReq {
 }
 
 message LDJJFAPMDHM {
@@ -61528,13 +61528,13 @@ message CDCICDDHBEO {
   bool FKCFIMHGLGI = 12;
 }
 
-message GADILCIHHJO {
-  bool NDPLCGLJOHG = 3;
-  uint32 FOKNCMIKGOA = 5;
+message LeyLineChallengeDataState {
+  bool BAHBANBDBON = 3;
+  uint32 activity_schedule_id = 5;
   uint32 CNLCIBODPKN = 8;
-  uint32 BJEIMALCENI = 9;
+  uint32 reliquary_id = 9;
   uint32 HKFJOKDMPBI = 10;
-  uint64 GCOBBEGBFEO = 11;
+  uint64 BBMMIHAFFOE = 11;
 }
 
 message RoguelikeSettleCoinInfo {
@@ -65219,7 +65219,7 @@ message ServerBuffChangeType {
   }
 }
 
-message GBKBDMFHNIH {
+message LeyLineChallengeStage {
   enum Value {
     None = 0;
     Prepare = 1;

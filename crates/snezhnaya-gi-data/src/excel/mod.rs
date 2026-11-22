@@ -1,5 +1,6 @@
 pub mod common;
 pub mod production;
+pub mod progression;
 
 mod avatar_costume_excel_config;
 mod avatar_curve_excel_config;
@@ -99,6 +100,7 @@ macro_rules! excel_loader {
             })*
 
             production::ProductionConfig::load(excel_bin_output_path)?;
+            progression::ProgressionConfig::load(excel_bin_output_path)?;
             Ok(())
         }
 

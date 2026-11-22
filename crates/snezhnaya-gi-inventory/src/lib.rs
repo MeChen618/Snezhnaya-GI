@@ -6,7 +6,7 @@ mod gm;
 mod item;
 mod production;
 mod reliquary;
-mod transaction;
+pub mod transaction;
 
 pub struct InventoryPlugin;
 

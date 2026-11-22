@@ -9,6 +9,8 @@ pub struct AvatarTalentExcelConfig {
     pub add_props: Vec<AddProp>,
     #[serde(default)]
     pub main_cost_item_id: u32,
+    #[serde(default, rename = "KCHDANFBCGD")]
+    cost_material_id: u32,
     #[serde(default)]
     pub main_cost_item_count: u32,
     #[serde(default)]
@@ -16,6 +18,17 @@ pub struct AvatarTalentExcelConfig {
     pub param_list: Vec<f32>,
     pub desc_text_map_hash: u64,
     pub name_text_map_hash: u64,
+}
+
+impl AvatarTalentExcelConfig {
+    pub fn cost_item_id(&self) -> u32 {
+        // 新资源同时保留两列，命座材料以实际消耗列为准。
+        if self.cost_material_id != 0 {
+            self.cost_material_id
+        } else {
+            self.main_cost_item_id
+        }
+    }
 }
 
 pub trait AvatarTalentExcelConfigKeyed<K> {

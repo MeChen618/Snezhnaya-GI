@@ -1,4 +1,4 @@
-#[derive(num_enum::IntoPrimitive)]
+#[derive(Clone, Copy, num_enum::IntoPrimitive)]
 #[repr(i32)]
 pub enum Retcode {
     RetSucc = 0,

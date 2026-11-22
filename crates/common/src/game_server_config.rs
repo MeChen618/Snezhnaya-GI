@@ -1,5 +1,5 @@
-use crate::TomlConfig;
 use crate::database_config::DatabaseSettings;
+use crate::TomlConfig;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -11,6 +11,8 @@ pub struct GameServerConfig {
     pub database: DatabaseSettings,
     #[serde(default)]
     pub sdk: SdkSettings,
+    #[serde(default)]
+    pub activities: Vec<ActivitySettings>,
     pub cur_region_name: String,
     pub region_list_path: String,
     pub encryption_config_path: String,
@@ -65,4 +67,13 @@ pub struct PluginSettings {
 
 impl TomlConfig for GameServerConfig {
     const DEFAULT_TOML: &str = include_str!("../game-server.default.toml");
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ActivitySettings {
+    pub activity_id: u32,
+    pub activity_type: u32,
+    pub schedule_id: u32,
+    pub begin_time: u32,
+    pub end_time: u32,
 }

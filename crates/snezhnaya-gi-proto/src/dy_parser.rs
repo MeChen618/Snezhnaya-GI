@@ -277,6 +277,15 @@ where
     if version == "base" {
         return Some(value.encode_to_vec());
     }
+    encode_json_by_name_version(version, message_name, &serde_json::to_value(value).ok()?)
+}
+
+/// 使用本版描述符发送新增协议，字段编号和掩码仍由协议配置负责。
+pub fn encode_json_by_name_version(
+    version: &str,
+    message_name: &str,
+    value: &serde_json::Value,
+) -> Option<Vec<u8>> {
     let registry = MULTI_VERSION_PROTOCOL.get()?;
     let data = registry.get(version)?;
     let result = (|| -> Result<Vec<u8>> {
@@ -284,7 +293,7 @@ where
             .messages
             .get(message_name)
             .ok_or_else(|| anyhow!("message descriptor not found"))?;
-        let json = align_json(descriptor, serde_json::to_value(value)?, true);
+        let json = align_json(descriptor, value.clone(), true);
         let mut message = protobuf_json_mapping::parse_dyn_from_str_with_options(
             descriptor,
             &serde_json::to_string(&json)?,
@@ -312,9 +321,29 @@ where
     if version == "base" {
         return T::decode(body).ok();
     }
+    decode_value_by_name_version(version, message_name, body)?
+        .deserialize_into()
+        .ok()
+}
+
+pub fn decode_json_by_name_version(
+    version: &str,
+    message_name: &str,
+    body: &[u8],
+) -> Option<serde_json::Value> {
+    decode_value_by_name_version(version, message_name, body)?
+        .deserialize_into()
+        .ok()
+}
+
+fn decode_value_by_name_version(
+    version: &str,
+    message_name: &str,
+    body: &[u8],
+) -> Option<serde_value::Value> {
     let registry = MULTI_VERSION_PROTOCOL.get()?;
     let data = registry.get(version)?;
-    let result = (|| -> Result<T> {
+    let result = (|| -> Result<serde_value::Value> {
         let descriptor = data
             .messages
             .get(message_name)
@@ -331,7 +360,7 @@ where
             },
         )?;
         let aligned = align_json(descriptor, serde_json::from_str(&text)?, false);
-        Ok(internal_value(descriptor, aligned)?.deserialize_into()?)
+        internal_value(descriptor, aligned)
     })();
     result
         .map_err(|error| tracing::error!(%error, version, message_name, "protocol decode failed"))

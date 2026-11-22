@@ -1,9 +1,12 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::excel::{SceneTagConfig, SceneTagConfigKeyed};
+use snezhnaya_gi_data::scene::scene_point_config::ScenePointConfig;
 use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
-use snezhnaya_gi_persistence::Players;
+use snezhnaya_gi_persistence::{record_progress, Players};
+use snezhnaya_gi_proto::retcode::Retcode;
+use snezhnaya_gi_proto::server_only::{CityBin, PlayerDataBin, SceneAreaCompBin, SceneBin};
 use std::sync::Arc;
 
 mod on_map;
@@ -12,15 +15,88 @@ pub struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreUpdate, data_request_processor)
+        app.add_systems(PreStartup, initialize_maps)
+            .add_systems(PreUpdate, data_request_processor)
             .add_systems(PreUpdate, on_map::message_on_map)
             .add_systems(PreUpdate, sync_scene_info_list_on_scene_init)
             .add_systems(PreUpdate, sync_group_unlimit_point_list_on_post_enter_scene);
     }
 }
 
+fn scene_state<'a>(
+    player: &'a mut PlayerDataBin,
+    scene_id: u32,
+    config: &ScenePointConfig,
+) -> &'a mut SceneBin {
+    let scenes = &mut player
+        .scene_bin
+        .get_or_insert_with(Default::default)
+        .world
+        .get_or_insert_with(Default::default)
+        .scene_map;
+    if let std::collections::hash_map::Entry::Vacant(entry) = scenes.entry(scene_id) {
+        // 沿用默认全解锁策略，已有存档不覆盖。
+        let mut points: Vec<_> = config.points.keys().copied().collect();
+        points.sort_unstable();
+        let mut areas: Vec<_> = (1..=1000)
+            .chain(
+                config
+                    .points
+                    .values()
+                    .map(|p| p.area_id)
+                    .filter(|id| *id != 0),
+            )
+            .collect();
+        areas.sort_unstable();
+        areas.dedup();
+        entry.insert(SceneBin {
+            unlocked_point_list: points,
+            area_comp_bin: Some(SceneAreaCompBin {
+                unlocked_area_list: areas,
+                city_map: if scene_id == 3 {
+                    (1..=5)
+                        .map(|id| {
+                            (
+                                id,
+                                CityBin {
+                                    level: 10,
+                                    crystal_num: 10,
+                                },
+                            )
+                        })
+                        .collect()
+                } else {
+                    Default::default()
+                },
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        record_progress(player, "map", scene_id, 1);
+    }
+    player
+        .scene_bin
+        .as_mut()
+        .unwrap()
+        .world
+        .as_mut()
+        .unwrap()
+        .scene_map
+        .get_mut(&scene_id)
+        .unwrap()
+}
+fn initialize_maps(mut players: ResMut<Players>) {
+    let configs = snezhnaya_gi_data::scene::scene_point_config::get_scene_point_config_collection();
+    if let Some(config) = configs.get(&3) {
+        for player in players.values_mut() {
+            scene_state(player, 3, config);
+        }
+    }
+}
+
 fn data_request_processor(
     mut events: MessageReader<ClientMessageEvent>,
+    mut players: ResMut<Players>,
     message_output: Res<MessageOutput>,
 ) {
     use snezhnaya_gi_proto::normal::*;
@@ -35,81 +111,91 @@ fn data_request_processor(
         match message.message_name() {
             "GetSceneAreaReq" => {
                 if let Some(request) = message.decode::<GetSceneAreaReq>() {
+                    let Some(player) = players.get_mut(message.sender_uid()) else {
+                        continue;
+                    };
+                    let Some(config) = scene_point_config_collection_clone.get(&request.scene_id)
+                    else {
+                        message_output.send(
+                            message.sender_uid(),
+                            "GetSceneAreaRsp",
+                            GetSceneAreaRsp {
+                                retcode: Retcode::RetNotFoundConfig.into(),
+                                scene_id: request.scene_id,
+                                ..Default::default()
+                            },
+                        );
+                        continue;
+                    };
+                    let state = scene_state(player, request.scene_id, config);
+                    let area = state.area_comp_bin.as_ref();
                     message_output.send(
                         message.sender_uid(),
                         "GetSceneAreaRsp",
                         GetSceneAreaRsp {
-                            retcode: snezhnaya_gi_proto::retcode::Retcode::RetSucc.into(),
-                            city_info_list: vec![
-                                CityInfo {
-                                    crystal_num: 10,
-                                    city_id: 1,
-                                    level: 10,
-                                },
-                                CityInfo {
-                                    crystal_num: 10,
-                                    city_id: 2,
-                                    level: 10,
-                                },
-                                CityInfo {
-                                    crystal_num: 10,
-                                    city_id: 3,
-                                    level: 10,
-                                },
-                                CityInfo {
-                                    crystal_num: 10,
-                                    city_id: 4,
-                                    level: 10,
-                                },
-                                CityInfo {
-                                    crystal_num: 10,
-                                    city_id: 5,
-                                    level: 10,
-                                },
-                            ],
                             scene_id: request.scene_id,
-                            area_id_list: (1..=1000).collect(),
+                            area_id_list: area.map_or(vec![], |a| a.unlocked_area_list.clone()),
+                            city_info_list: area
+                                .into_iter()
+                                .flat_map(|a| a.city_map.iter())
+                                .map(|(&city_id, c)| CityInfo {
+                                    city_id,
+                                    level: c.level,
+                                    crystal_num: c.crystal_num,
+                                })
+                                .collect(),
+                            ..Default::default()
                         },
-                    )
+                    );
                 }
             }
             "GetScenePointReq" => {
                 if let Some(request) = message.decode::<GetScenePointReq>() {
                     match scene_point_config_collection_clone.get(&request.scene_id) {
-                        None => {}
+                        None => {
+                            message_output.send(
+                                message.sender_uid(),
+                                "GetScenePointRsp",
+                                GetScenePointRsp {
+                                    retcode: Retcode::RetNotFoundConfig.into(),
+                                    scene_id: request.scene_id,
+                                    ..Default::default()
+                                },
+                            );
+                        }
                         Some(scene_config) => {
-                            let unlock_area_list: Vec<u32> = scene_config
-                                .points
-                                .values()
-                                .map(|point_data| point_data.area_id)
-                                .collect();
+                            let owner = if request.belong_uid == 0 {
+                                message.sender_uid()
+                            } else {
+                                request.belong_uid
+                            };
+                            let Some(player) = players.get_mut(owner) else {
+                                message_output.send(
+                                    message.sender_uid(),
+                                    "GetScenePointRsp",
+                                    GetScenePointRsp {
+                                        retcode: Retcode::RetFail.into(),
+                                        scene_id: request.scene_id,
+                                        belong_uid: owner,
+                                        ..Default::default()
+                                    },
+                                );
+                                continue;
+                            };
+                            let state = scene_state(player, request.scene_id, scene_config);
                             message_output.send(
                                 message.sender_uid(),
                                 "GetScenePointRsp",
                                 GetScenePointRsp {
                                     is_relogin: request.is_relogin,
-                                    belong_uid: request.belong_uid,
+                                    belong_uid: owner,
                                     scene_id: request.scene_id,
-                                    unlock_area_list,
-                                    unlocked_point_list: scene_config
-                                        .points
-                                        .keys()
-                                        .cloned()
-                                        .collect(),
-                                    unhide_point_list: scene_config
-                                        .points
-                                        .keys()
-                                        .cloned()
-                                        .collect(),
-                                    // group_unlimit_point_list: scene_config
-                                    //     .points
-                                    //     .iter()
-                                    //     .filter(|(_point_id, point_data)| {
-                                    //         point_data.r#point_type == "DungeonEntry"
-                                    //             && point_data.group_limit
-                                    //     })
-                                    //     .map(|(point_id, _point_data)| *point_id)
-                                    //     .collect(),
+                                    unlock_area_list: state
+                                        .area_comp_bin
+                                        .as_ref()
+                                        .map_or(vec![], |a| a.unlocked_area_list.clone()),
+                                    unlocked_point_list: state.unlocked_point_list.clone(),
+                                    unhide_point_list: state.unlocked_point_list.clone(),
                                     ..Default::default()
                                 },
                             )

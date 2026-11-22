@@ -71,6 +71,11 @@ message PlayerDataBin {
   PlayerGCGCompBin gcg_bin = 65;
   uint32 uid = 10001;
   uint32 guid_counter = 10002;
+  PlayerProgressionBin progression_bin = 10003;
+}
+
+message PlayerProgressionBin {
+  map<string, uint64> counters = 1;
 }
 
 message PlayerBasicCompBin {
@@ -839,6 +844,7 @@ message PlayerInvestigationCompBin {
   repeated uint32 finished_target_id_list = 2;
   repeated uint32 reward_taken_target_id_list = 3;
   bool is_today_quest_daily_notify_ack = 4;
+  map<uint32, uint32> target_progress_map = 10001;
 }
 
 message SeaLampSectionBin {
@@ -2597,6 +2603,9 @@ message ActivityBin {
   map<uint32, uint32> activity_push_tips_map = 24;
   repeated ActivityGeneralCoinBin activity_general_coin_list = 25;
   bool is_common_content_closed = 26;
+  map<uint32, uint32> watcher_progress_map = 10001;
+  LeyLineChallengeBin ley_line_challenge = 10002;
+  map<uint32, uint64> watcher_counter_base_map = 10003;
 }
 
 message PlayerActivityCompBin {
@@ -2647,6 +2656,10 @@ message GachaBin {
   uint32 fail_5_count = 103;
   repeated bool item4_is_up_list = 104;
   repeated bool item5_is_up_list = 105;
+  uint32 total_count = 10001;
+  uint32 daily_count = 10002;
+  uint32 last_day = 10003;
+  uint32 wish_progress = 10004;
 }
 
 message GivingRecordBin {
@@ -2942,11 +2955,16 @@ message BattlePassScheduleBin {
   uint32 cur_cycle_points = 8;
   bool is_notify_mail_sent = 9;
   uint32 paid_platform_flags = 10;
+  uint32 begin_time = 10001;
+  uint32 end_time = 10002;
+  uint32 reward_plan = 10003;
 }
 
 message BattlePassMissionBin {
   uint32 mission_id = 1;
   uint32 mission_status = 2;
+  uint32 progress = 10001;
+  uint64 counter_base = 10002;
 }
 
 message PlayerBattlePassCompBin {
@@ -3959,3 +3977,11 @@ message ContentAuditBin {
   uint32 submit_time = 3;
   uint32 submit_count = 4;
 }
+
+message LeyLineChallengeBin {
+  uint32 reliquary_id = 1;
+  repeated uint32 favorite_reliquary_ids = 2;
+  map<uint32, LeyLineChallengeTeamsBin> teams = 3;
+}
+message LeyLineChallengeTeamsBin { repeated LeyLineChallengeTeamBin team_list = 1; }
+message LeyLineChallengeTeamBin { repeated uint32 avatar_ids = 1; }

@@ -266,3 +266,98 @@ pub struct ReliquaryReforgeDataNotify {
     #[prost(message, repeated, tag = "4")]
     pub reforge_record_list: Vec<ReliquaryReforgeRecord>,
 }
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TakeInvestigationTargetRewardReq {
+    #[prost(uint32, tag = "1")]
+    pub quest_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TakeInvestigationTargetRewardRsp {
+    #[prost(int32, tag = "1")]
+    pub retcode: i32,
+    #[prost(uint32, tag = "2")]
+    pub quest_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TakeInvestigationRewardReq {
+    #[prost(uint32, tag = "1")]
+    pub id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TakeInvestigationRewardRsp {
+    #[prost(int32, tag = "1")]
+    pub retcode: i32,
+    #[prost(uint32, tag = "2")]
+    pub id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct BattlePassSetRewardPlanReq {
+    #[prost(uint32, tag = "1")]
+    pub battle_pass_plan: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct BattlePassSetRewardPlanRsp {
+    #[prost(int32, tag = "1")]
+    pub retcode: i32,
+    #[prost(uint32, tag = "2")]
+    pub battle_pass_plan: u32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Investigation {
+    #[prost(uint32, tag = "1")]
+    pub total_progress: u32,
+    #[prost(int32, tag = "2")]
+    pub state: i32,
+    #[prost(uint32, tag = "3")]
+    pub id: u32,
+    #[prost(uint32, tag = "4")]
+    pub progress: u32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct InvestigationTarget {
+    #[prost(uint32, tag = "1")]
+    pub investigation_id: u32,
+    #[prost(uint32, tag = "2")]
+    pub quest_id: u32,
+    #[prost(int32, tag = "3")]
+    pub state: i32,
+    #[prost(uint32, tag = "4")]
+    pub progress: u32,
+    #[prost(uint32, tag = "5")]
+    pub total_progress: u32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct PlayerInvestigationAllInfoNotify {
+    #[prost(message, repeated, tag = "1")]
+    pub investigation_target_list: Vec<InvestigationTarget>,
+    #[prost(message, repeated, tag = "2")]
+    pub investigation_list: Vec<Investigation>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct GetBattlePassProductRsp {
+    #[prost(uint32, tag = "1")]
+    pub battle_pass_product_play_type: u32,
+    #[prost(string, tag = "2")]
+    pub product_id: String,
+    #[prost(int32, tag = "3")]
+    pub retcode: i32,
+    #[prost(string, tag = "4")]
+    pub price_tier: String,
+    #[prost(uint32, tag = "5")]
+    pub cur_schedule_id: u32,
+}

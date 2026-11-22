@@ -12120,6 +12120,18 @@ pub struct PlayerDataBin {
     #[prost(uint32, tag = "10002")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub guid_counter: u32,
+    #[prost(message, optional, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub progression_bin: ::core::option::Option<PlayerProgressionBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerProgressionBin {
+    #[serde(with="crate::u64_map_value_string")]
+    #[prost(map = "string, uint64", tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub counters: ::std::collections::HashMap<::prost::alloc::string::String, u64>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -14120,6 +14132,9 @@ pub struct PlayerInvestigationCompBin {
     #[prost(bool, tag = "4")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub is_today_quest_daily_notify_ack: bool,
+    #[prost(map = "uint32, uint32", tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub target_progress_map: ::std::collections::HashMap<u32, u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -18448,6 +18463,16 @@ pub struct ActivityBin {
     #[prost(bool, tag = "26")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub is_common_content_closed: bool,
+    #[prost(map = "uint32, uint32", tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub watcher_progress_map: ::std::collections::HashMap<u32, u32>,
+    #[prost(message, optional, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub ley_line_challenge: ::core::option::Option<LeyLineChallengeBin>,
+    #[serde(with="crate::u64_map_value_string")]
+    #[prost(map = "uint32, uint64", tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub watcher_counter_base_map: ::std::collections::HashMap<u32, u64>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -18570,6 +18595,18 @@ pub struct GachaBin {
     #[prost(bool, repeated, tag = "105")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub item5_is_up_list: ::prost::alloc::vec::Vec<bool>,
+    #[prost(uint32, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub total_count: u32,
+    #[prost(uint32, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub daily_count: u32,
+    #[prost(uint32, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub last_day: u32,
+    #[prost(uint32, tag = "10004")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub wish_progress: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -19310,6 +19347,15 @@ pub struct BattlePassScheduleBin {
     #[prost(uint32, tag = "10")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub paid_platform_flags: u32,
+    #[prost(uint32, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub begin_time: u32,
+    #[prost(uint32, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub end_time: u32,
+    #[prost(uint32, tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reward_plan: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -19321,6 +19367,13 @@ pub struct BattlePassMissionBin {
     #[prost(uint32, tag = "2")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub mission_status: u32,
+    #[prost(uint32, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub progress: u32,
+    #[serde(with="crate::u64_string")]
+    #[prost(uint64, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub counter_base: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -21791,4 +21844,34 @@ pub struct ContentAuditBin {
     #[prost(uint32, tag = "4")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub submit_count: u32,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeyLineChallengeBin {
+    #[prost(uint32, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_id: u32,
+    #[prost(uint32, repeated, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub favorite_reliquary_ids: ::prost::alloc::vec::Vec<u32>,
+    #[prost(map = "uint32, message", tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub teams: ::std::collections::HashMap<u32, LeyLineChallengeTeamsBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeyLineChallengeTeamsBin {
+    #[prost(message, repeated, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub team_list: ::prost::alloc::vec::Vec<LeyLineChallengeTeamBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LeyLineChallengeTeamBin {
+    #[prost(uint32, repeated, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub avatar_ids: ::prost::alloc::vec::Vec<u32>,
 }

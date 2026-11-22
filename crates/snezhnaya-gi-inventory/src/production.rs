@@ -448,6 +448,7 @@ fn combine(
         return Err(Retcode::RetNotFoundConfig);
     }
     execute(player, &costs, &rewards, output)?;
+    snezhnaya_gi_persistence::record_progress(player, "combine", 0, request.combine_count);
     // 客户端会再乘合成次数，这里只填单次产出。
     Ok(CombineRsp {
         combine_id: request.combine_id,
@@ -579,6 +580,12 @@ fn forge_manipulate(
                     .unwrap()
                     .taken_count = completed;
             }
+            snezhnaya_gi_persistence::record_progress(player, "forge", 0, ready);
+            if snezhnaya_gi_data::excel::weapon_excel_config_collection::get()
+                .contains_key(&config.result_item_id)
+            {
+                snezhnaya_gi_persistence::record_progress(player, "forge_weapon", 0, ready);
+            }
             response.output_item_list = hints(&rewards);
         }
         1 => {
@@ -613,6 +620,8 @@ fn forge_take_all(
     let timestamp = now();
     let mut rewards = Amounts::new();
     let mut updates = Vec::new();
+    let mut count = 0;
+    let mut weapon_count = 0;
     for (&id, queue) in player
         .forge_bin
         .iter()
@@ -635,6 +644,12 @@ fn forge_take_all(
                 .checked_mul(ready)
                 .ok_or(Retcode::RetItemExceedLimit)?,
         )?;
+        count += ready;
+        if snezhnaya_gi_data::excel::weapon_excel_config_collection::get()
+            .contains_key(&config.result_item_id)
+        {
+            weapon_count += ready;
+        }
         updates.push((id, completed, completed == queue.forge_count));
     }
     if updates.is_empty() {
@@ -652,6 +667,8 @@ fn forge_take_all(
         }
     }
     forge_notify(player, output, removed);
+    snezhnaya_gi_persistence::record_progress(player, "forge", 0, count);
+    snezhnaya_gi_persistence::record_progress(player, "forge_weapon", 0, weapon_count);
     Ok(TakeAllForgeOutputRsp {
         output_item_list: hints(&rewards),
         ..Default::default()
@@ -741,6 +758,7 @@ fn cook(
         .get_mut(&request.recipe_id)
         .unwrap()
         .proficiency = proficiency;
+    snezhnaya_gi_persistence::record_progress(player, "cook", 0, request.cook_count);
     Ok(PlayerCookRsp {
         recipe_data: Some(CookRecipeData {
             recipe_id: request.recipe_id,
@@ -806,6 +824,7 @@ fn compound_start(
         .get_or_insert_with(Default::default)
         .compound_que_bin_map
         .insert(request.compound_id, queue);
+    snezhnaya_gi_persistence::record_progress(player, "compound", 0, request.count);
     Ok(PlayerCompoundMaterialRsp {
         compound_que_data: compound_data(player, now())
             .into_iter()

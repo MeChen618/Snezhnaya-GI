@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use crate::get_player_version;
 use bevy_ecs::prelude::Resource;
 use common::logging::TRACE_LOG_PACKET;
+use serde::Serialize;
 use snezhnaya_gi_data::GAME_SERVER_CONFIG;
 use snezhnaya_gi_proto::packet_head::PacketHead;
 use snezhnaya_gi_proto::Protobuf;
-use serde::Serialize;
 use tokio::sync::mpsc;
 
 #[derive(Clone)]
@@ -33,6 +33,28 @@ impl MessageOutput {
                 message_name,
                 message,
             );
+        }
+    }
+
+    pub fn send_json(&self, player_uid: u32, message_name: &str, message: serde_json::Value) {
+        if let Some(out) = self.0.get(&player_uid) {
+            let version = get_player_version!(&player_uid);
+            let Some(cmd_id) = snezhnaya_gi_proto::dy_parser::get_cmd_id_by_name_version(
+                version.as_str(),
+                message_name,
+            ) else {
+                tracing::warn!(version = version.as_str(), message_name, "cmd_id not found");
+                return;
+            };
+            if let Some(body) = snezhnaya_gi_proto::dy_parser::encode_json_by_name_version(
+                version.as_str(),
+                message_name,
+                &message,
+            ) {
+                let _ =
+                    out.0
+                        .blocking_send((cmd_id, PacketHead::default(), body.into_boxed_slice()));
+            }
         }
     }
 

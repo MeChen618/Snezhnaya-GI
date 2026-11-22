@@ -11,7 +11,7 @@ impl Players {
         self.0.keys()
     }
 
-    pub fn get(&self, uid: u32) -> Option<&PlayerDataBin>  {
+    pub fn get(&self, uid: u32) -> Option<&PlayerDataBin> {
         self.0.get(&uid)
     }
 
@@ -28,6 +28,36 @@ impl From<HashMap<u32, PlayerDataBin>> for Players {
     fn from(value: HashMap<u32, PlayerDataBin>) -> Self {
         Self(value)
     }
+}
+
+pub fn progress_counter(player: &PlayerDataBin, kind: &str, param: u32) -> u64 {
+    player
+        .progression_bin
+        .as_ref()
+        .and_then(|bin| bin.counters.get(&format!("{kind}:{param}")))
+        .copied()
+        .unwrap_or(0)
+}
+
+pub fn record_progress(player: &mut PlayerDataBin, kind: &str, param: u32, count: u32) {
+    if count == 0 {
+        return;
+    }
+    let value = player
+        .progression_bin
+        .get_or_insert_with(Default::default)
+        .counters
+        .entry(format!("{kind}:{param}"))
+        .or_default();
+    *value = value.saturating_add(u64::from(count));
+    let revision = player
+        .progression_bin
+        .as_mut()
+        .unwrap()
+        .counters
+        .entry("revision:0".into())
+        .or_default();
+    *revision = revision.saturating_add(1);
 }
 
 pub fn player_snapshot(player: &PlayerDataBin) -> std::borrow::Cow<'_, PlayerDataBin> {

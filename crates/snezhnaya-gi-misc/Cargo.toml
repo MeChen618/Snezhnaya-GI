@@ -7,9 +7,12 @@ version.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 tracing.workspace = true
+serde_json.workspace = true
 
 common.workspace = true
 snezhnaya-gi-proto.workspace = true
 snezhnaya-gi-event.workspace = true
 snezhnaya-gi-message.workspace = true
 snezhnaya-gi-persistence.workspace = true
+snezhnaya-gi-data.workspace = true
+snezhnaya-gi-inventory.workspace = true

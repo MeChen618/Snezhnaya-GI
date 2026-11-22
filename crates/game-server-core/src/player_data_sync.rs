@@ -2,9 +2,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use common::time_util;
 use snezhnaya_gi_data::excel;
-use snezhnaya_gi_data::excel::{FetterDataConfig, FetterDataConfigKeyed};
-use snezhnaya_gi_entity::common::create_fight_props_with_equip;
-use snezhnaya_gi_entity::{common::LifeState, int_prop_map};
+use snezhnaya_gi_entity::int_prop_map;
 use snezhnaya_gi_message::output::MessageOutput;
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::*;
@@ -96,12 +94,6 @@ pub fn sync_player_store(players: Res<Players>, message_output: Res<MessageOutpu
 }
 
 pub fn sync_avatar_data(players: Res<Players>, message_output: Res<MessageOutput>) {
-    let avatar_excel_config_collection_clone =
-        std::sync::Arc::clone(excel::avatar_excel_config_collection::get());
-
-    let fetter_data_entries_clone =
-        std::sync::Arc::clone(FetterDataConfig::get_fetter_data_entries());
-
     for uid in players.keys() {
         let Some(player_info) = players.get(*uid) else {
             continue;
@@ -119,103 +111,7 @@ pub fn sync_avatar_data(players: Res<Players>, message_output: Res<MessageOutput
                 avatar_list: player_avatar_bin
                     .avatar_map
                     .values()
-                    .filter_map(|avatar_bin| {
-                        let Some(skill_depot) =
-                            avatar_bin.depot_map.get(&avatar_bin.skill_depot_id)
-                        else {
-                            tracing::debug!(
-                                "skill_depot bin {} doesn't exist",
-                                avatar_bin.skill_depot_id
-                            );
-                            return None;
-                        };
-
-                        let mut fetter_data_list = vec![];
-
-                        if fetter_data_entries_clone.contains_key(&avatar_bin.avatar_id) {
-                            let Some(temp_fetter_data_list) = fetter_data_entries_clone
-                                .get(&avatar_bin.avatar_id)
-                                .cloned()
-                            else {
-                                tracing::debug!(
-                                    "fetter config {} doesn't exist",
-                                    avatar_bin.avatar_id
-                                );
-                                return None;
-                            };
-                            fetter_data_list = temp_fetter_data_list;
-                        }
-
-                        let Some(avatar_config) =
-                            avatar_excel_config_collection_clone.get(&avatar_bin.avatar_id)
-                        else {
-                            tracing::debug!("avatar config {} doesn't exist", avatar_bin.avatar_id);
-                            return None;
-                        };
-
-                        Some(AvatarInfo {
-                            avatar_type: 1,
-                            avatar_id: avatar_bin.avatar_id,
-                            guid: avatar_bin.guid,
-                            equip_guid_list: avatar_bin
-                                .equip_map
-                                .iter()
-                                .map(|(_, item)| item.guid)
-                                .collect(),
-                            skill_depot_id: avatar_bin.skill_depot_id,
-                            talent_id_list: skill_depot.talent_id_list.clone(),
-                            core_proud_skill_level: skill_depot.core_proud_skill_level,
-                            born_time: avatar_bin.born_time,
-                            life_state: (avatar_bin.cur_hp > 0.0)
-                                .then_some(LifeState::Alive)
-                                .unwrap_or(LifeState::Dead)
-                                as u32,
-                            wearing_flycloak_id: avatar_bin.wearing_flycloak_id,
-                            costume_id: avatar_bin.costume_id,
-                            trace_effect_id: avatar_bin.trace_effect_id,
-                            fetter_info: Some(AvatarFetterInfo {
-                                fetter_list: fetter_data_list
-                                    .into_iter()
-                                    .map(|x| FetterData {
-                                        fetter_state: 3,
-                                        fetter_id: x.fetter_id,
-                                        ..Default::default()
-                                    })
-                                    .collect(),
-                                ..Default::default()
-                            }),
-                            skill_level_map: skill_depot.skill_level_map.clone(),
-                            skill_map: avatar_bin
-                                .skill_map
-                                .iter()
-                                .map(|(k, v)| {
-                                    (
-                                        *k,
-                                        AvatarSkillInfo {
-                                            max_charge_count: v.max_charge_count,
-                                            ..Default::default()
-                                        },
-                                    )
-                                })
-                                .collect(),
-                            inherent_proud_skill_list: skill_depot
-                                .inherent_proud_skill_list
-                                .clone(),
-                            prop_map: int_prop_map! {
-                                PROP_LEVEL: avatar_bin.level;
-                                PROP_BREAK_LEVEL: avatar_bin.promote_level;
-                            },
-                            fight_prop_map: create_fight_props_with_equip(
-                                avatar_bin,
-                                avatar_config,
-                            )
-                            .0
-                            .iter()
-                            .map(|(ty, val)| (*ty as u32, *val))
-                            .collect(),
-                            ..Default::default()
-                        })
-                    })
+                    .filter_map(snezhnaya_gi_avatar::util::client_avatar_info)
                     .collect(),
                 avatar_team_map: player_avatar_bin
                     .team_map

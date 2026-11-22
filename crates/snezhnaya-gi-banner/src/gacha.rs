@@ -1,199 +1,210 @@
+use rand::{rngs::SmallRng, Rng};
 use snezhnaya_gi_data::custom::{BannerWeight, GachaBanner};
-use snezhnaya_gi_data::excel::common::MaterialType;
-use snezhnaya_gi_data::excel::{material_excel_config_collection, weapon_excel_config_collection};
-use snezhnaya_gi_proto::server_only::GachaBin;
-use rand::prelude::SmallRng;
-use rand::Rng;
+use snezhnaya_gi_data::excel::{self, common::MaterialType, AvatarUseType, ItemUseOp};
+use snezhnaya_gi_proto::{retcode::Retcode, server_only::GachaBin};
 
-pub fn roll_gacha_once_readonly(
-    rng: &mut SmallRng,
-    banner: &GachaBanner,
-    bin: &GachaBin,
-) -> (u32, bool, bool, bool, bool) {
-    let material_excel_config_collection_clone =
-        std::sync::Arc::clone(material_excel_config_collection::get());
-
-    let weapon_excel_config_collection_clone =
-        std::sync::Arc::clone(weapon_excel_config_collection::get());
-
-    let default_avatar_5 = material_excel_config_collection_clone
-        .iter()
-        .filter(|(_, v)| v.material_type == MaterialType::Avatar && v.rank_level == 5)
-        .map(|(k, _)| *k)
-        .collect::<Vec<u32>>();
-
-    let default_avatar_4 = material_excel_config_collection_clone
-        .iter()
-        .filter(|(_, v)| v.material_type == MaterialType::Avatar && v.rank_level == 4)
-        .map(|(k, _)| *k)
-        .collect::<Vec<u32>>();
-
-    let default_weapon_5 = weapon_excel_config_collection_clone
-        .iter()
-        .filter(|(_, v)| v.rank_level == 5)
-        .map(|(k, _)| *k)
-        .collect::<Vec<u32>>();
-
-    let default_weapon_4 = weapon_excel_config_collection_clone
-        .iter()
-        .filter(|(_, v)| v.rank_level == 4)
-        .map(|(k, _)| *k)
-        .collect::<Vec<u32>>();
-
-    let default_weapon_3 = weapon_excel_config_collection_clone
-        .iter()
-        .filter(|(_, v)| v.rank_level == 3)
-        .map(|(k, _)| *k)
-        .collect::<Vec<u32>>();
-
-    let mut rate_up_items_5 = banner.rate_up_items_5.clone();
-    let mut rate_up_items_4 = banner.rate_up_items_4.clone();
-
-    let mut fallback_items_5_pool = vec![];
-    let mut fallback_items_4_pool = vec![];
-
-    if banner.gacha_type == 302 {
-        if rate_up_items_5.is_empty() {
-            rate_up_items_5 = default_weapon_5;
-        };
-        if rate_up_items_4.is_empty() {
-            rate_up_items_4 = default_weapon_4;
-        };
-        if fallback_items_5_pool.is_empty() {
-            fallback_items_5_pool = banner.fallback_items_5_pool_2.clone().unwrap_or_default();
-        }
-        if fallback_items_4_pool.is_empty() {
-            fallback_items_4_pool = banner.fallback_items_4_pool_2.clone().unwrap_or_default();
-        }
-    } else {
-        if rate_up_items_5.is_empty() {
-            rate_up_items_5 = default_avatar_5;
-        };
-        if rate_up_items_4.is_empty() {
-            rate_up_items_4 = default_avatar_4;
-        };
-        if fallback_items_5_pool.is_empty() {
-            fallback_items_5_pool = banner.fallback_items_5_pool_1.clone().unwrap_or_default();
-        }
-        if fallback_items_4_pool.is_empty() {
-            fallback_items_4_pool = banner.fallback_items_4_pool_1.clone().unwrap_or_default();
-        }
-    }
-
-    if fallback_items_5_pool.is_empty() {
-        fallback_items_5_pool = rate_up_items_5.clone();
-    }
-    if fallback_items_4_pool.is_empty() {
-        fallback_items_4_pool = rate_up_items_4.clone();
-    }
-
-    let mut fallback_items_3_pool = banner.fallback_items_3.clone().unwrap_or_default();
-    if fallback_items_3_pool.is_empty() {
-        fallback_items_3_pool = default_weapon_3;
-    }
-
-    assert!(!rate_up_items_5.is_empty(), "rate_up_items_5 is empty");
-    assert!(!rate_up_items_4.is_empty(), "rate_up_items_4 is empty");
-    assert!(
-        !fallback_items_5_pool.is_empty(),
-        "fallback_items_5_pool is empty"
-    );
-    assert!(
-        !fallback_items_4_pool.is_empty(),
-        "fallback_items_4_pool is empty"
-    );
-    assert!(
-        !fallback_items_3_pool.is_empty(),
-        "fallback_items_3_pool is empty"
-    );
-
-    // =====================================================
-    // 1. 5★
-    // =====================================================
-    let is_5 = roll_star(rng, bin.fail_5_count, banner.weights_5.as_ref());
-    if is_5 {
-        let pity5 = if *bin.item5_is_up_list.last().unwrap_or(&true) {
-            0
-        } else {
-            1
-        };
-
-        let is_up = if pity5 >= 1 {
-            true
-        } else {
-            rng.gen_range(0..100) < 60
-        };
-
-        if is_up {
-            let item = if bin.wish_item_id != 0 {
-                bin.wish_item_id
-            } else {
-                let up = rate_up_items_5.as_slice();
-                up[rng.gen_range(0..up.len())]
-            };
-
-            return (item, false, true, false, true);
-        }
-
-        let item = fallback_items_5_pool[rng.gen_range(0..fallback_items_5_pool.len())];
-
-        return (item, false, true, false, false);
-    }
-
-    // =====================================================
-    // 2. 4★
-    // =====================================================
-    let is_4 = roll_star(rng, bin.fail_4_count, banner.weights_4.as_ref());
-    if is_4 {
-        let pity4 = if *bin.item4_is_up_list.last().unwrap_or(&true) {
-            0
-        } else {
-            1
-        };
-
-        let is_up = if pity4 >= 1 {
-            true
-        } else {
-            rng.gen_range(0..100) < 60
-        };
-
-        if is_up {
-            let up = rate_up_items_4.as_slice();
-            let item = up[rng.gen_range(0..up.len())];
-            return (item, true, false, true, false);
-        }
-
-        let item = fallback_items_4_pool[rng.gen_range(0..fallback_items_4_pool.len())];
-
-        return (item, true, false, false, false);
-    }
-
-    // =====================================================
-    // 3. 3★
-    // =====================================================
-    let item = fallback_items_3_pool[rng.gen_range(0..fallback_items_3_pool.len())];
-
-    (item, false, false, false, false)
+pub struct GachaPool {
+    up4: Vec<u32>,
+    up5: Vec<u32>,
+    normal3: Vec<u32>,
+    normal4: Vec<u32>,
+    normal5: Vec<u32>,
 }
 
-///（fail_count + weights）
-fn roll_star(rng: &mut SmallRng, fail: u32, weights: Option<&Vec<BannerWeight>>) -> bool {
-    let weights = match weights {
-        Some(w) => w,
-        None => return false,
-    };
+pub struct Roll {
+    pub item_id: u32,
+    pub rank: u32,
+    pub is_up: bool,
+}
 
-    let mut weight = 0;
+pub fn avatar_id(item_id: u32) -> Option<u32> {
+    let material = excel::material_excel_config_collection::get().get(&item_id)?;
+    if material.material_type != MaterialType::Avatar {
+        return None;
+    }
+    material
+        .item_use
+        .iter()
+        .find(|action| action.use_op == ItemUseOp::GainAvatar)?
+        .use_param
+        .first()?
+        .as_str()
+        .parse()
+        .ok()
+}
 
-    for bw in weights {
-        if fail >= bw.pulls {
-            weight = bw.weight;
+impl GachaPool {
+    pub fn new(banner: &GachaBanner) -> Result<Self, Retcode> {
+        let materials = excel::material_excel_config_collection::get();
+        let weapons = excel::weapon_excel_config_collection::get();
+        let avatars = excel::avatar_excel_config_collection::get();
+        let default = |rank| {
+            let mut items: Vec<_> = weapons
+                .values()
+                .filter(|v| v.rank_level == rank)
+                .map(|v| v.id)
+                .collect();
+            if banner.gacha_type != 302 && rank != 3 {
+                items.extend(
+                    materials
+                        .values()
+                        .filter(|v| {
+                            v.rank_level == rank
+                                && avatar_id(v.id)
+                                    .and_then(|id| avatars.get(&id))
+                                    .is_some_and(|a| a.use_type == Some(AvatarUseType::Formal))
+                        })
+                        .map(|v| v.id),
+                );
+            }
+            items.sort_unstable();
+            items
+        };
+        let normal4 = if banner.gacha_type == 302 {
+            &banner.fallback_items_4_pool_2
+        } else {
+            &banner.fallback_items_4_pool_1
+        };
+        let normal5 = if banner.gacha_type == 302 {
+            &banner.fallback_items_5_pool_2
+        } else {
+            &banner.fallback_items_5_pool_1
+        };
+        let pool = Self {
+            up4: banner.rate_up_items_4.clone(),
+            up5: banner.rate_up_items_5.clone(),
+            normal3: banner
+                .fallback_items_3
+                .clone()
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| default(3)),
+            normal4: normal4
+                .clone()
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| default(4)),
+            normal5: normal5
+                .clone()
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| default(5)),
+        };
+        for (rank, items) in [
+            (3, &pool.normal3),
+            (4, &pool.normal4),
+            (5, &pool.normal5),
+            (4, &pool.up4),
+            (5, &pool.up5),
+        ] {
+            if items.iter().any(|id| {
+                weapons.get(id).map(|w| w.rank_level) != Some(rank)
+                    && !materials.get(id).is_some_and(|m| {
+                        m.rank_level == rank
+                            && avatar_id(*id)
+                                .and_then(|id| avatars.get(&id))
+                                .is_some_and(|a| a.use_type == Some(AvatarUseType::Formal))
+                    })
+            }) {
+                return Err(Retcode::RetGachaInavailable);
+            }
+        }
+        if pool.normal3.is_empty() || pool.normal4.is_empty() || pool.normal5.is_empty() {
+            return Err(Retcode::RetGachaInavailable);
+        }
+        if matches!(banner.gacha_type, 301 | 302 | 500) && pool.up5.is_empty() {
+            return Err(Retcode::RetGachaInavailable);
+        }
+        Ok(pool)
+    }
+
+    pub fn roll(&self, rng: &mut SmallRng, banner: &GachaBanner, state: &GachaBin) -> Roll {
+        let weapon = banner.gacha_type == 302;
+        let rank = if chance(
+            rng,
+            state.fail_5_count,
+            banner.weights_5.as_deref(),
+            if weapon { 70 } else { 60 },
+            if weapon { 63 } else { 74 },
+            if weapon { 80 } else { 90 },
+        ) {
+            5
+        } else if chance(
+            rng,
+            state.fail_4_count,
+            banner.weights_4.as_deref(),
+            if weapon { 600 } else { 510 },
+            10,
+            10,
+        ) {
+            4
+        } else {
+            3
+        };
+        let (up, normal, guarantee, rate) = match rank {
+            5 => (
+                &self.up5,
+                &self.normal5,
+                state.item5_is_up_list.last() == Some(&false),
+                banner
+                    .event_chance_5
+                    .unwrap_or(if weapon { 75 } else { 50 }),
+            ),
+            4 => (
+                &self.up4,
+                &self.normal4,
+                state.item4_is_up_list.last() == Some(&false),
+                banner
+                    .event_chance_4
+                    .unwrap_or(if weapon { 75 } else { 50 }),
+            ),
+            _ => {
+                return Roll {
+                    item_id: self.normal3[rng.gen_range(0..self.normal3.len())],
+                    rank: 3,
+                    is_up: false,
+                }
+            }
+        };
+        if rank == 5
+            && state.wish_item_id != 0
+            && state.wish_progress >= 1
+            && up.contains(&state.wish_item_id)
+        {
+            return Roll {
+                item_id: state.wish_item_id,
+                rank,
+                is_up: true,
+            };
+        }
+        let is_up = !up.is_empty() && (guarantee || rng.gen_range(0..100) < rate.min(100));
+        let items = if is_up { up } else { normal };
+        let item_id = items[rng.gen_range(0..items.len())];
+        Roll {
+            item_id,
+            rank,
+            is_up: !up.is_empty() && up.contains(&item_id),
         }
     }
+}
 
-    if weight >= 10000 {
-        return true;
-    }
-
-    rng.gen_range(0..10000) < weight
+fn chance(
+    rng: &mut SmallRng,
+    pulls: u32,
+    weights: Option<&[BannerWeight]>,
+    base: u32,
+    soft: u32,
+    hard: u32,
+) -> bool {
+    let weight = if let Some(weights) = weights {
+        weights
+            .iter()
+            .filter(|row| row.pulls <= pulls)
+            .max_by_key(|row| row.pulls)
+            .map_or(0, |row| row.weight)
+    } else if pulls >= hard {
+        10000
+    } else if pulls >= soft {
+        base.saturating_add((pulls - soft + 1).saturating_mul(if hard == 80 { 700 } else { 600 }))
+    } else {
+        base
+    };
+    rng.gen_range(0..10000) < weight.min(10000)
 }
