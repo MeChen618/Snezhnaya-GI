@@ -204,6 +204,17 @@ pub struct InstancedModifiers {
 }
 
 impl InstancedModifiers {
+    pub fn is_invincible(&self) -> bool {
+        let now = std::time::Instant::now();
+        self.modifiers.values().any(|modifier| {
+            modifier.modifier_data.is_some_and(|data| {
+                data.state
+                    .as_str()
+                    .split(['|', ','])
+                    .any(|state| state.trim() == "Invincible")
+            }) && modifier.expires_at.is_none_or(|end| now < end)
+        })
+    }
     /// look up a modifier in either sub‑map
     pub fn get(&self, id: &u32) -> Option<&InstancedModifier> {
         self.modifiers.get(id)
@@ -238,6 +249,7 @@ impl InstancedModifiers {
 }
 
 pub struct InstancedModifier {
+    pub expires_at: Option<std::time::Instant>,
     pub instanced_modifier_id: u32,
     pub name: InternString,
     pub property_deltas: HashMap<FightPropType, f32>,
@@ -254,6 +266,7 @@ impl InstancedModifier {
         target_entity: Option<Entity>,
     ) -> Self {
         Self {
+            expires_at: None,
             instanced_modifier_id,
             name: modifier_name,
             property_deltas: HashMap::new(),

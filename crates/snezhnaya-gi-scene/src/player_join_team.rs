@@ -18,12 +18,17 @@ pub fn player_join_team(
     peer_mgr: Res<ScenePeerManager>,
     mut entity_counter: ResMut<EntityCounter>,
     mut scene_team_update_events: MessageWriter<SceneTeamUpdateEvent>,
-    avatars: Query<(Entity, AvatarQueryReadOnly)>,
+    avatars: Query<(Entity, AvatarQueryReadOnly, Option<&Visible>)>,
+    mut disappear: MessageWriter<snezhnaya_gi_event::entity::EntityDisappearEvent>,
     world_version_config: Res<WorldVersionConfig>,
 ) {
-    let is_empty = events.is_empty();
-
+    // 同一帧的换队和进场只采用最后一份队伍，避免重复生成角色。
+    let mut latest = std::collections::BTreeMap::new();
     for event in events.read() {
+        latest.insert(event.player_uid, event);
+    }
+    let is_empty = latest.is_empty();
+    for event in latest.values() {
         let uid = event.player_uid;
         let Some(player_info) = players.get(uid) else {
             continue;
@@ -37,11 +42,31 @@ pub fn player_join_team(
             continue;
         };
 
+        for (entity, avatar, visible) in &avatars {
+            if avatar.owner_player_uid.0 != uid {
+                continue;
+            }
+            if !event.avatar_guid_list.contains(&avatar.guid.0) {
+                commands.entity(entity).remove::<CurrentTeam>();
+            }
+            if avatar.guid.0 != event.appear_avatar_guid {
+                commands
+                    .entity(entity)
+                    .remove::<CurrentPlayerAvatarMarker>()
+                    .remove::<Visible>();
+                if visible.is_some() {
+                    disappear.write(snezhnaya_gi_event::entity::EntityDisappearEvent(
+                        avatar.entity_id.0,
+                        snezhnaya_gi_proto::normal::VisionType::VisionMiss.into(),
+                    ));
+                }
+            }
+        }
         for (idx, to_spawn_guid) in event.avatar_guid_list.iter().enumerate() {
-            match avatars.iter().find(|(_, avatar_data)| {
+            match avatars.iter().find(|(_, avatar_data, _)| {
                 avatar_data.guid.0 == *to_spawn_guid && avatar_data.owner_player_uid.0 == uid
             }) {
-                Some((avatar_entity, _)) => {
+                Some((avatar_entity, _, _)) => {
                     commands
                         .entity(avatar_entity)
                         .insert(ControlPeer(peer_mgr.get_peer_id_by_uid(uid)))

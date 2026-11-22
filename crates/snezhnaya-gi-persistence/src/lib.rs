@@ -60,6 +60,52 @@ pub fn record_progress(player: &mut PlayerDataBin, kind: &str, param: u32, count
     *revision = revision.saturating_add(1);
 }
 
+pub fn normalize_active_team(player: &mut PlayerDataBin) -> bool {
+    let Some(a) = player.avatar_bin.as_mut() else {
+        return false;
+    };
+    let mut seen = std::collections::HashSet::new();
+    a.cur_avatar_guid_list
+        .retain(|guid| *guid != 0 && a.avatar_map.contains_key(guid) && seen.insert(*guid));
+    if a.cur_avatar_guid_list.is_empty() {
+        a.cur_avatar_guid_list = a
+            .team_map
+            .get(&a.cur_team_id)
+            .map_or(vec![], |t| t.avatar_guid_list.clone());
+        a.cur_avatar_guid_list
+            .retain(|guid| *guid != 0 && a.avatar_map.contains_key(guid) && seen.insert(*guid));
+    }
+    if a.cur_avatar_guid_list.is_empty() {
+        if let Some(guid) = a.avatar_map.keys().filter(|id| **id != 0).min().copied() {
+            a.cur_avatar_guid_list.push(guid);
+        }
+    }
+    a.cur_avatar_guid_list.truncate(4);
+    if !a.cur_avatar_guid_list.contains(&a.cur_avatar_guid) {
+        a.cur_avatar_guid = a.cur_avatar_guid_list.first().copied().unwrap_or(0);
+    }
+    for guid in &a.cur_avatar_guid_list {
+        if let Some(avatar) = a.avatar_map.get_mut(guid) {
+            avatar.guid = *guid;
+        }
+    }
+    !a.cur_avatar_guid_list.is_empty()
+}
+
+pub fn restore_dungeon_team(player: &mut PlayerDataBin) {
+    if let Some(d) = player
+        .dungeon_bin
+        .as_ref()
+        .filter(|d| d.is_ley_line_challenge)
+    {
+        if let Some(a) = player.avatar_bin.as_mut() {
+            a.cur_avatar_guid_list = d.original_avatar_guids.clone();
+            a.cur_avatar_guid = d.original_avatar_guid;
+        }
+        normalize_active_team(player);
+    }
+}
+
 pub fn player_snapshot(player: &PlayerDataBin) -> std::borrow::Cow<'_, PlayerDataBin> {
     let Some(dungeon) = player
         .dungeon_bin
@@ -69,12 +115,7 @@ pub fn player_snapshot(player: &PlayerDataBin) -> std::borrow::Cow<'_, PlayerDat
         return std::borrow::Cow::Borrowed(player);
     };
     let mut snapshot = player.clone();
-    if dungeon.is_ley_line_challenge {
-        if let Some(avatars) = snapshot.avatar_bin.as_mut() {
-            avatars.cur_avatar_guid_list = dungeon.original_avatar_guids.clone();
-            avatars.cur_avatar_guid = dungeon.original_avatar_guid;
-        }
-    }
+    restore_dungeon_team(&mut snapshot);
     // 副本里也保存背包和任务，重登位置回到副本入口。
     if let Some(scene) = snapshot.scene_bin.as_mut() {
         let valid_exit =

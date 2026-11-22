@@ -491,6 +491,24 @@ fn schedule_packet(state: &b::BattlePassScheduleBin) -> BattlePassSchedule {
     let end = (((week(now()) + 1) * 7 - 3) * 86400).saturating_sub(4 * 3600) - 1;
     BattlePassSchedule {
         schedule_id: state.schedule_id,
+        product_info: Some(BattlePassProduct {
+            normal_product_id: ProgressionConfig::get()
+                .pass_product_ids
+                .get(&201)
+                .cloned()
+                .unwrap_or_default(),
+            extra_product_id: ProgressionConfig::get()
+                .pass_product_ids
+                .get(&202)
+                .cloned()
+                .unwrap_or_default(),
+            upgrade_product_id: ProgressionConfig::get()
+                .pass_product_ids
+                .get(&203)
+                .cloned()
+                .unwrap_or_default(),
+            ..Default::default()
+        }),
         level: state.level,
         point: state.point,
         unlock_status: state.unlock_status as i32,
@@ -513,53 +531,39 @@ fn schedule_packet(state: &b::BattlePassScheduleBin) -> BattlePassSchedule {
                 ..Default::default()
             })
             .collect(),
-        reward_plan_option_list: (1..=4)
-            .filter(|plan| {
-                ProgressionConfig::get()
-                    .pass_rewards
-                    .contains_key(&(*plan, 1))
-            })
-            .map(|plan| BattlePassRewardPlanOption {
-                battle_pass_plan: plan,
-                ..Default::default()
-            })
-            .collect(),
         ..Default::default()
     }
 }
+fn schedule_json(state: &b::BattlePassScheduleBin) -> serde_json::Value {
+    let mut packet =
+        serde_json::to_value(schedule_packet(state)).expect("battle pass serialization");
+    packet["reward_plan_option_list"] = serde_json::json!((1..=5)
+        .map(|slot| serde_json::json!({
+            "IMMIBAOCIEH": slot, "battle_pass_plan":state.reward_plan
+        }))
+        .collect::<Vec<_>>());
+    packet
+}
 fn notify_pass(player: &b::PlayerDataBin, output: &MessageOutput) {
     let state = pass_state(player);
-    output.send(
-        player.uid,
-        "BattlePassAllDataNotify",
-        BattlePassAllDataNotify {
-            have_cur_schedule: state.is_some(),
-            cur_schedule: state.map(schedule_packet),
-            battle_pass_plan: state.map_or(1, |s| s.reward_plan),
-            mission_list: player
-                .battle_pass_bin
-                .as_ref()
-                .into_iter()
-                .flat_map(|p| p.cur_battle_pass_mission_bin_list.iter())
-                .filter_map(mission_packet)
-                .collect(),
-            ..Default::default()
-        },
-    );
+    let missions: Vec<_> = player
+        .battle_pass_bin
+        .as_ref()
+        .into_iter()
+        .flat_map(|p| p.cur_battle_pass_mission_bin_list.iter())
+        .filter_map(mission_packet)
+        .collect();
+    output.send_json(player.uid,"BattlePassAllDataNotify",serde_json::json!({
+        "have_cur_schedule":state.is_some(),"cur_schedule":state.map(schedule_json),
+        "battle_pass_plan":state.map_or(1,|s|s.reward_plan),"is_viewed":state.is_some_and(|s|s.is_viewed),"mission_list":missions
+    }));
 }
 fn notify_schedule(player: &b::PlayerDataBin, output: &MessageOutput) {
     let state = pass_state(player);
-    output.send(
-        player.uid,
-        "BattlePassCurScheduleUpdateNotify",
-        BattlePassCurScheduleUpdateNotify {
-            have_cur_schedule: state.is_some(),
-            cur_schedule: state.map(schedule_packet),
-            battle_pass_plan: state.map_or(1, |s| s.reward_plan),
-            is_viewed: state.is_some_and(|s| s.is_viewed),
-            ..Default::default()
-        },
-    );
+    output.send_json(player.uid,"BattlePassCurScheduleUpdateNotify",serde_json::json!({
+        "have_cur_schedule":state.is_some(),"cur_schedule":state.map(schedule_json),
+        "battle_pass_plan":state.map_or(1,|s|s.reward_plan),"is_viewed":state.is_some_and(|s|s.is_viewed)
+    }));
 }
 fn target_packet(
     player: &b::PlayerDataBin,
@@ -697,14 +701,37 @@ pub fn handle(
         };
         refresh(player, now());
         match name {
-            "GetBattlePassProductReq" => output.send(
-                player.uid,
-                "GetBattlePassProductRsp",
-                GetBattlePassProductRsp {
-                    cur_schedule_id: pass_state(player).map_or(0, |s| s.schedule_id),
-                    ..Default::default()
-                },
-            ),
+            "GetBattlePassProductReq" => {
+                let play_type = message
+                    .decode_json()
+                    .and_then(|r| {
+                        r.get("battle_pass_product_play_type")
+                            .and_then(serde_json::Value::as_u64)
+                    })
+                    .unwrap_or(0) as u32;
+                let config = 200u32.checked_add(play_type);
+                let catalog = ProgressionConfig::get();
+                let product = config.and_then(|id| catalog.pass_product_ids.get(&id));
+                let tier = config.and_then(|id| catalog.pass_product_tiers.get(&id));
+                output.send(
+                    player.uid,
+                    "GetBattlePassProductRsp",
+                    GetBattlePassProductRsp {
+                        battle_pass_product_play_type: play_type,
+                        cur_schedule_id: pass_state(player).map_or(0, |s| s.schedule_id),
+                        product_id: product.cloned().unwrap_or_default(),
+                        price_tier: tier.cloned().unwrap_or_default(),
+                        retcode: if (1..=5).contains(&play_type)
+                            && product.is_some()
+                            && tier.is_some()
+                        {
+                            0
+                        } else {
+                            Retcode::RetShopContentNotMatch.into()
+                        },
+                    },
+                );
+            }
             "SetBattlePassViewedReq" => {
                 if let Some(state) = pass_state_mut(player) {
                     state.is_viewed = true;

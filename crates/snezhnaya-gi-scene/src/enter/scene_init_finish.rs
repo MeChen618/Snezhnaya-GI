@@ -34,21 +34,13 @@ pub fn on_scene_init_finish(
             }
         };
 
+        if !snezhnaya_gi_persistence::normalize_active_team(player_info) {
+            tracing::error!(uid, "scene entry has no owned avatar");
+            continue;
+        }
         let Some(ref mut player_avatar_bin) = player_info.avatar_bin else {
             continue;
         };
-
-        let Some(team_info) = player_avatar_bin
-            .team_map
-            .get(&player_avatar_bin.cur_team_id)
-        else {
-            tracing::debug!("team_info {} doesn't exist", player_avatar_bin.cur_team_id);
-            continue;
-        };
-
-        if player_avatar_bin.cur_avatar_guid_list.is_empty() {
-            player_avatar_bin.cur_avatar_guid_list = team_info.avatar_guid_list.clone();
-        }
 
         if player_avatar_bin.cur_avatar_guid_list.is_empty() {
             tracing::debug!("cur_avatar_guid_list is_empty");

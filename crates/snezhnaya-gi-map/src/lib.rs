@@ -9,6 +9,7 @@ use snezhnaya_gi_proto::retcode::Retcode;
 use snezhnaya_gi_proto::server_only::{CityBin, PlayerDataBin, SceneAreaCompBin, SceneBin};
 use std::sync::Arc;
 
+mod handbook;
 mod on_map;
 
 pub struct MapPlugin;
@@ -16,6 +17,7 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PreStartup, initialize_maps)
+            .add_systems(Update, handbook::handle)
             .add_systems(PreUpdate, data_request_processor)
             .add_systems(PreUpdate, on_map::message_on_map)
             .add_systems(PreUpdate, sync_scene_info_list_on_scene_init)

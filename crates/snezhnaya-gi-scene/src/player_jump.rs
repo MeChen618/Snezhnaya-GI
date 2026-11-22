@@ -4,12 +4,12 @@ use snezhnaya_gi_data::quest::quest_config::QuestContent;
 use snezhnaya_gi_entity::avatar::{AvatarQueryReadOnly, CurrentPlayerAvatarMarker};
 use snezhnaya_gi_entity::common::Visible;
 use snezhnaya_gi_entity::transform::Transform;
-use snezhnaya_gi_event::scene::*;
+use snezhnaya_gi_event::entity::EntityDisappearEvent;
 use snezhnaya_gi_event::quest::QuestContentProgressEvent;
+use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::VisionType;
 use snezhnaya_gi_proto::server_only::{PlayerDungeonCompBin, VectorBin};
-use snezhnaya_gi_event::entity::EntityDisappearEvent;
 use std::sync::Arc;
 
 pub fn player_jump(
@@ -24,6 +24,13 @@ pub fn player_jump(
         let Some(player_info) = players.get_mut(*uid) else {
             continue;
         };
+        if player_info
+            .scene_bin
+            .as_ref()
+            .is_some_and(|s| s.my_cur_scene_id != *scene_id)
+        {
+            snezhnaya_gi_persistence::restore_dungeon_team(player_info);
+        }
         let Some(ref mut player_scene_bin) = player_info.scene_bin else {
             continue;
         };
@@ -111,6 +118,7 @@ pub fn player_jump_by_point(
                         continue;
                     };
 
+                    snezhnaya_gi_persistence::restore_dungeon_team(player_info);
                     let Some(ref player_scene_bin) = player_info.scene_bin else {
                         continue;
                     };
@@ -162,7 +170,8 @@ pub fn player_enter_dungeon(
     let dungeon_excel_config_collection_clone =
         Arc::clone(snezhnaya_gi_data::excel::dungeon_excel_config_collection::get());
 
-    let scene_config_collection_clone = snezhnaya_gi_data::scene::script_cache::get_scene_config_collection();
+    let scene_config_collection_clone =
+        snezhnaya_gi_data::scene::script_cache::get_scene_config_collection();
 
     for ScenePlayerEnterDungeonEvent(uid, dungeon_id) in events.read() {
         match dungeon_excel_config_collection_clone.get(&dungeon_id) {

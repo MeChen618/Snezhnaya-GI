@@ -340,7 +340,14 @@ impl Context<'_, '_> {
     }
     fn restore(&mut self, s: &mut Session) {
         self.clear_battle(s);
-        self.team(s.owner, s.original.clone(), s.original_guid, false);
+        // 场景初始化会按恢复后的队伍生成实体，不再另发一次换队事件。
+        if let Some(p) = self.players.get_mut(s.owner) {
+            if let Some(a) = p.avatar_bin.as_mut() {
+                a.cur_avatar_guid_list = s.original.clone();
+                a.cur_avatar_guid = s.original_guid;
+            }
+            snezhnaya_gi_persistence::normalize_active_team(p);
+        }
     }
     fn reenter(&mut self, s: &mut Session) {
         self.clear_battle(s);
@@ -915,8 +922,11 @@ pub fn handle(
                 }
             }
             "PlayerQuitDungeonReq" => {
-                ctx.restore(&mut s);
-                continue;
+                if req.get("is_quit_immediately").and_then(Value::as_bool).unwrap_or(false) {
+                    ctx.restore(&mut s);
+                    continue;
+                }
+                Ok(())
             }
             _ => Ok(()),
         };

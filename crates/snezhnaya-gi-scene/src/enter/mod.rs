@@ -74,9 +74,27 @@ pub fn handle_enter_scene_state_change(
             }
         }
 
+        let token = match next_enter_state {
+            EnterSceneState::Ready => msg
+                .decode::<snezhnaya_gi_proto::normal::EnterSceneReadyReq>()
+                .map(|r| r.enter_scene_token),
+            EnterSceneState::InitFinish => msg
+                .decode::<snezhnaya_gi_proto::normal::SceneInitFinishReq>()
+                .map(|r| r.enter_scene_token),
+            EnterSceneState::Done => msg
+                .decode::<snezhnaya_gi_proto::normal::EnterSceneDoneReq>()
+                .map(|r| r.enter_scene_token),
+            EnterSceneState::Post => msg
+                .decode::<snezhnaya_gi_proto::normal::PostEnterSceneReq>()
+                .map(|r| r.enter_scene_token),
+        };
         let Some(player_scene_state) = player_scene_states.get_mut(&msg.sender_uid()) else {
             continue;
         };
+        if token != Some(player_scene_state.enter_scene_token()) {
+            tracing::debug!(uid = msg.sender_uid(), "discarding stale scene token");
+            continue;
+        }
         let prev_enter_state = player_scene_state.enter_state();
 
         if player_scene_state.change_enter_state(next_enter_state) {

@@ -1,9 +1,10 @@
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::prop_type::FightPropType;
+use snezhnaya_gi_entity::avatar::ReplaceCurrentPlayerAvatarMarker;
 use snezhnaya_gi_entity::avatar::{AvatarQueryReadOnly, CurrentPlayerAvatarMarker};
-use snezhnaya_gi_entity::avatar::{CurrentTeam, ReplaceCurrentPlayerAvatarMarker};
 use snezhnaya_gi_entity::common::{FightProperties, LifeState, Visible};
 use snezhnaya_gi_entity::transform::Transform;
+use snezhnaya_gi_event::entity::{EntityDisappearEvent, EntityPropertySeparateUpdateEvent};
 use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
@@ -17,7 +18,6 @@ use snezhnaya_gi_proto::normal::{
 use snezhnaya_gi_proto::retcode::Retcode;
 use std::collections::HashSet;
 use tracing::{debug, instrument};
-use snezhnaya_gi_event::entity::{EntityDisappearEvent, EntityPropertySeparateUpdateEvent};
 
 pub fn change_avatar(
     mut client_messages: MessageReader<ClientMessageEvent>,
@@ -328,35 +328,9 @@ pub fn set_up_avatar_team(
 
 pub fn replace_avatar_team(
     mut events: MessageReader<PlayerAvatarTeamChanged>,
-    mut commands: Commands,
-    avatars: Query<(Entity, AvatarQueryReadOnly)>,
     mut join_team_events: MessageWriter<PlayerJoinTeamEvent>,
-    mut disappear_events: MessageWriter<EntityDisappearEvent>,
 ) {
     for event in events.read() {
-        // TODO: multiple teams - check if modified team is active
-
-        for (avatar_entity, avatar_data) in avatars
-            .iter()
-            .filter(|(_, a)| a.owner_player_uid.0 == event.uid)
-        {
-            commands
-                .entity(avatar_entity)
-                .remove::<CurrentTeam>()
-                .remove::<CurrentPlayerAvatarMarker>()
-                .remove::<Visible>();
-
-            disappear_events.write(EntityDisappearEvent(
-                avatar_data.entity_id.0,
-                VisionType::VisionMiss.into(),
-            ));
-
-            // commands.entity(avatar_entity).insert(ToBeRemovedMarker);
-            // commands
-            //     .entity(avatar_data.avatar_equipment_weapon.0)
-            //     .insert(ToBeRemovedMarker);
-        }
-
         join_team_events.write(PlayerJoinTeamEvent {
             player_uid: event.uid,
             avatar_guid_list: event.avatar_team_guid_list.clone(),

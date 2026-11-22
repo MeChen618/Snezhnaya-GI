@@ -2877,6 +2877,7 @@ version = "7.2.0"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "serde_json",
  "snezhnaya-gi-data",
  "snezhnaya-gi-event",
  "snezhnaya-gi-message",

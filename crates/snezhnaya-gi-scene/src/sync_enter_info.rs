@@ -1,7 +1,7 @@
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_entity::{
     ability::Ability,
-    avatar::{AvatarQueryReadOnly, CurrentPlayerAvatarMarker},
+    avatar::{AvatarQueryReadOnly, CurrentPlayerAvatarMarker, CurrentTeam},
     common::{OwnerPlayerUID, ProtocolEntityID},
     mp_level::{AuthorityPeerId, MpLevelEntityMarker},
     play_team::PlayTeamEntityMarker,
@@ -20,7 +20,11 @@ pub fn sync_enter_info(
     player_scene_states: Res<PlayerSceneStates>,
     team_entity_query: Query<(&ProtocolEntityID, &Ability), With<TeamEntityMarker>>,
     mp_level_entity_query: Query<(&ProtocolEntityID, &AuthorityPeerId), With<MpLevelEntityMarker>>,
-    avatars: Query<(AvatarQueryReadOnly, Option<&CurrentPlayerAvatarMarker>)>,
+    avatars: Query<(
+        AvatarQueryReadOnly,
+        Option<&CurrentPlayerAvatarMarker>,
+        Option<&CurrentTeam>,
+    )>,
     weapons: Query<WeaponQueryReadOnly>,
     players: Res<Players>,
     peer_mgr: Res<ScenePeerManager>,
@@ -38,10 +42,19 @@ pub fn sync_enter_info(
             continue;
         };
 
+        let current_guid = players
+            .get(uid)
+            .and_then(|p| p.avatar_bin.as_ref())
+            .map_or(0, |a| a.cur_avatar_guid);
         let Some(cur_avatar_entity_id) = avatars
             .iter()
-            .find(|(data, cur)| data.owner_player_uid.0 == uid && cur.is_some())
-            .map(|(data, _)| data.entity_id.0)
+            .find(|(data, cur, team)| {
+                data.owner_player_uid.0 == uid
+                    && data.guid.0 == current_guid
+                    && cur.is_some()
+                    && team.is_some()
+            })
+            .map(|(data, _, _)| data.entity_id.0)
         else {
             tracing::error!("cur_avatar_entity_id None");
             continue;
@@ -97,8 +110,8 @@ pub fn sync_enter_info(
                 mp_level_entity_info: Some(mp_level_entity_info),
                 avatar_enter_info: avatars
                     .iter()
-                    .filter(|(data, _)| data.owner_player_uid.0 == uid)
-                    .filter_map(|(avatar_data, _)| {
+                    .filter(|(data, _, team)| data.owner_player_uid.0 == uid && team.is_some())
+                    .filter_map(|(avatar_data, _, _)| {
                         match weapons.get(avatar_data.avatar_equipment_weapon.0) {
                             Ok(weapon_data) => {
                                 Some(snezhnaya_gi_proto::normal::AvatarEnterSceneInfo {

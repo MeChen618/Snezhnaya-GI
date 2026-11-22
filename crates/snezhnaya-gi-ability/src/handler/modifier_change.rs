@@ -235,12 +235,62 @@ pub fn handle_modifier_change(
                                         continue;
                                     }
                                     Some(ability_index) => {
-                                        let modifier_controller = InstancedModifier::new(
+                                        if let Some(old) = this_instanced_modifiers
+                                            .modifiers
+                                            .remove(&instanced_modifier_id)
+                                        {
+                                            if let Some(data) = old.modifier_data {
+                                                if let Some(ability) =
+                                                    old.ability_index.and_then(|i| {
+                                                        this_instanced_abilities
+                                                            .list
+                                                            .get_mut(i as usize)
+                                                    })
+                                                {
+                                                    remove_modifier_properties(
+                                                        data,
+                                                        ability,
+                                                        fight_properties.as_deref_mut(),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        let mut modifier_controller = InstancedModifier::new(
                                             instanced_modifier_id,
                                             modifier_data.modifier_name,
                                             ability_index,
                                             target_entity_ref,
                                         );
+                                        modifier_controller.modifier_data = Some(modifier_data);
+                                        if let Some(duration) = &modifier_data.duration {
+                                            if let Some(ability) = this_instanced_abilities
+                                                .list
+                                                .get_mut(ability_index as usize)
+                                            {
+                                                let seconds = eval(
+                                                    ability,
+                                                    fight_properties.as_deref(),
+                                                    duration,
+                                                    0.0,
+                                                );
+                                                let now = std::time::Instant::now();
+                                                modifier_controller.expires_at = if seconds
+                                                    .is_finite()
+                                                    && seconds < 0.0
+                                                {
+                                                    None
+                                                } else if seconds.is_finite() {
+                                                    std::time::Duration::try_from_secs_f32(seconds)
+                                                        .ok()
+                                                        .and_then(|duration| {
+                                                            now.checked_add(duration)
+                                                        })
+                                                        .or(Some(now))
+                                                } else {
+                                                    Some(now)
+                                                };
+                                            }
+                                        }
 
                                         this_instanced_modifiers
                                             .insert(instanced_modifier_id, modifier_controller);

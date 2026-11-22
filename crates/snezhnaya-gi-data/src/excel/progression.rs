@@ -182,7 +182,28 @@ pub fn cn_timestamp(text: &str) -> Option<u32> {
         .ok()
 }
 
+#[derive(Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HandbookDungeon {
+    pub id: u32,
+    pub scene_id: u32,
+    pub dungeon_entry_id: u32,
+    pub is_show_in_adv_handbook: bool,
+}
+#[derive(Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HandbookMonster {
+    pub id: u32,
+    pub city_id: u32,
+    pub group_id_list: Vec<u32>,
+    pub monster_id_list: Vec<u32>,
+    pub monster_category: String,
+}
 pub struct ProgressionConfig {
+    pub handbook_dungeons: BTreeMap<u32, HandbookDungeon>,
+    pub handbook_monsters: BTreeMap<u32, HandbookMonster>,
+    pub pass_product_ids: BTreeMap<u32, String>,
+    pub pass_product_tiers: BTreeMap<u32, String>,
     pub activities: BTreeMap<u32, Activity>,
     pub challenge_seasons: BTreeMap<u32, ChallengeSeason>,
     pub challenge_levels: BTreeMap<u32, ChallengeLevel>,
@@ -242,7 +263,42 @@ impl ProgressionConfig {
         struct Reliquary {
             id: u32,
         }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Product {
+            config_id: u32,
+            product_id: String,
+            #[serde(default)]
+            is_internal: bool,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ProductPlay {
+            config_id: u32,
+            price_tier: String,
+        }
         let data = Self {
+            pass_product_tiers: rows::<ProductPlay>(root, "ProductPlayDetailConfigData")?
+                .into_iter()
+                .map(|r| (r.config_id, r.price_tier))
+                .collect(),
+            handbook_dungeons: rows::<HandbookDungeon>(root, "DungeonEntryExcelConfigData")?
+                .into_iter()
+                .map(|r| (r.id, r))
+                .collect(),
+            handbook_monsters: rows::<HandbookMonster>(root, "InvestigationMonsterConfigData")?
+                .into_iter()
+                .map(|r| (r.id, r))
+                .collect(),
+            pass_product_ids: rows::<Product>(root, "ProductIdConfigData")?
+                .into_iter()
+                .filter(|r| {
+                    r.is_internal
+                        && (r.product_id.starts_with("ys_chn_")
+                            || r.product_id.starts_with("yschnbp"))
+                })
+                .map(|r| (r.config_id, r.product_id))
+                .collect(),
             activities: rows::<Activity>(root, "NewActivityExcelConfigData")?
                 .into_iter()
                 .map(|r| (r.activity_id, r))

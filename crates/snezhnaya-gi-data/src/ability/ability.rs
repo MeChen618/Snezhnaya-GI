@@ -60,6 +60,8 @@ pub struct AbilityData {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AbilityModifier {
+    #[serde(default)]
+    pub state: InternString,
     #[serde(skip)]
     pub modifier_name: InternString,
     #[serde(default)]

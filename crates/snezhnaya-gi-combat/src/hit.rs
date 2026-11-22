@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_entity::common::{
-    ConfigId, EntityById, FightProperties, GroupId, OwnerPlayerUID, ProtocolEntityID,
+    ConfigId, EntityById, FightProperties, GroupId, InstancedModifiers, OwnerPlayerUID,
+    ProtocolEntityID,
 };
 use snezhnaya_gi_entity::gadget::GadgetID;
 use snezhnaya_gi_event::combat::*;
@@ -18,11 +19,15 @@ pub fn deal_damage_on_hit(
         Option<&GroupId>,
         Option<&ConfigId>,
         Option<&GadgetID>,
+        Option<&InstancedModifiers>,
     )>,
     mut on_be_hurt_events: MessageWriter<OnBeHurtEvent>,
     world_version_config: Res<WorldVersionConfig>,
 ) {
     for EntityBeingHitEvent(originator_uid, attack_result) in events.read() {
+        if !attack_result.damage.is_finite() || attack_result.damage < 0.0 {
+            continue;
+        }
         let entity_type = attack_result.attacker_id >> world_version_config.ty_value;
         tracing::debug!("entity_type : {}", entity_type);
         if entity_type < ProtEntityType::ProtEntityMax as u32
@@ -33,7 +38,7 @@ pub fn deal_damage_on_hit(
                 None => continue,
             };
 
-            let Ok((_, _, attacker_owner, _, _, _)) = entities.get(attacker_entity) else {
+            let Ok((_, _, attacker_owner, _, _, _, _)) = entities.get(attacker_entity) else {
                 tracing::debug!("attacker with id {} not found", attack_result.attacker_id);
                 continue;
             };
@@ -55,13 +60,23 @@ pub fn deal_damage_on_hit(
             None => continue,
         };
 
-        let Ok((mut defender_props, _, _, group_id_comp, config_id_comp, gadget_id_comp)) =
-            entities.get_mut(defense_entity)
+        let Ok((
+            mut defender_props,
+            _,
+            _,
+            group_id_comp,
+            config_id_comp,
+            gadget_id_comp,
+            modifiers,
+        )) = entities.get_mut(defense_entity)
         else {
             tracing::debug!("defender with id {} not found", attack_result.defense_id);
             continue;
         };
 
+        if modifiers.is_some_and(InstancedModifiers::is_invincible) {
+            continue;
+        }
         defender_props.change_cur_hp(-attack_result.damage);
         tracing::debug!(
             "attacker (id: {}) dealt {} dmg to defender (id: {})",

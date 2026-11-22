@@ -1,8 +1,8 @@
+use ::common::player_cache::cache_set_is_tp;
+use ::common::time_util::unix_timestamp_ms;
 use avatar::{change_avatar, notify_avatar_team_update, replace_avatar_team, set_up_avatar_team};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use ::common::player_cache::cache_set_is_tp;
-use ::common::time_util::unix_timestamp_ms;
 use common::{PlayerSceneState, PlayerSceneStates, ScenePeerManager};
 use enter::EnterSceneStateSystems;
 use snezhnaya_gi_data::excel::{SceneTagConfig, SceneTagConfigKeyed};
@@ -17,13 +17,13 @@ use snezhnaya_gi_entity::{
     team::{TeamEntityBundle, TeamEntityMarker},
     util::to_protocol_entity_id,
 };
+use snezhnaya_gi_event::entity::EntityDisappearEvent;
 use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_message::output::MessageOutput;
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::dy_parser::{replace_out_u32, replace_out_u64};
 use snezhnaya_gi_proto::normal::{EnterType, ProtEntityType, VisionType};
 use std::sync::Arc;
-use snezhnaya_gi_event::entity::EntityDisappearEvent;
 
 mod avatar;
 mod enter;
@@ -42,7 +42,10 @@ impl Plugin for ScenePlugin {
             .insert_resource(PlayerSceneStates::default())
             .insert_resource(ScenePeerManager::default())
             .add_systems(PostStartup, init_scene)
-            .add_systems(PreUpdate, enter::handle_enter_scene_state_change)
+            .add_systems(
+                PreUpdate,
+                enter::handle_enter_scene_state_change.after(replace_avatar_team),
+            )
             .add_systems(PreUpdate, (set_up_avatar_team, replace_avatar_team).chain())
             .add_systems(PreUpdate, change_avatar)
             .add_systems(Update, player_join_team::player_join_team)
