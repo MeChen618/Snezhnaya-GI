@@ -9,9 +9,11 @@ use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::{
-    AvatarDieAnimationEndReq, AvatarDieAnimationEndRsp, AvatarTeam, AvatarTeamUpdateNotify,
-    ChangeAvatarReq, ChangeAvatarRsp, ChangeTeamNameReq, ChangeTeamNameRsp, ChooseCurAvatarTeamReq,
-    ChooseCurAvatarTeamRsp, SetUpAvatarTeamReq, SetUpAvatarTeamRsp, VisionType,
+    AddBackupAvatarTeamRsp, AvatarDieAnimationEndReq, AvatarDieAnimationEndRsp, AvatarTeam,
+    AvatarTeamAllDataNotify, AvatarTeamUpdateNotify, ChangeAvatarReq, ChangeAvatarRsp,
+    ChangeTeamNameReq, ChangeTeamNameRsp, ChooseCurAvatarTeamReq, ChooseCurAvatarTeamRsp,
+    DelBackupAvatarTeamReq, DelBackupAvatarTeamRsp, SetUpAvatarTeamReq, SetUpAvatarTeamRsp,
+    VisionType,
 };
 use snezhnaya_gi_proto::retcode::Retcode;
 use snezhnaya_gi_proto::server_only::{avatar_bin, PlayerAvatarCompBin, PlayerDataBin};
@@ -358,6 +360,71 @@ fn team_notify(player: &PlayerDataBin, out: &MessageOutput) {
     );
 }
 
+fn all_teams_notify(player: &PlayerDataBin, out: &MessageOutput) {
+    let Some(avatars) = player.avatar_bin.as_ref() else {
+        return;
+    };
+    out.send(
+        player.uid,
+        "AvatarTeamAllDataNotify",
+        AvatarTeamAllDataNotify {
+            avatar_team_map: avatars
+                .team_map
+                .iter()
+                .map(|(&id, team)| {
+                    (
+                        id,
+                        AvatarTeam {
+                            team_name: team.team_name.clone(),
+                            avatar_guid_list: team.avatar_guid_list.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            backup_avatar_team_order_list: avatars.backup_team_id_order_list.clone(),
+            cur_avatar_team_id: avatars.cur_team_id,
+            temp_avatar_guid_list: avatars.temp_avatar_guid_list.clone(),
+        },
+    );
+}
+
+fn move_team(avatars: &mut PlayerAvatarCompBin, from: u32, to: u32) -> Result<(), Retcode> {
+    let mut ids: Vec<_> = (1..=4)
+        .filter(|id| avatars.team_map.contains_key(id))
+        .collect();
+    let mut seen: HashSet<_> = ids.iter().copied().collect();
+    ids.extend(
+        avatars
+            .backup_team_id_order_list
+            .iter()
+            .copied()
+            .filter(|id| *id > 4 && avatars.team_map.contains_key(id) && seen.insert(*id)),
+    );
+    let first = ids
+        .iter()
+        .position(|id| *id == from)
+        .ok_or(Retcode::RetCanNotFindTeam)?;
+    let last = ids
+        .iter()
+        .position(|id| *id == to)
+        .ok_or(Retcode::RetCanNotFindTeam)?;
+    let mut teams: Vec<_> = ids
+        .iter()
+        .map(|id| (*id, avatars.team_map[id].clone()))
+        .collect();
+    let moved = teams.remove(first);
+    teams.insert(last, moved);
+    let current = avatars.cur_team_id;
+    // 只移动预设槽位，当前队伍和出场角色保持对应，避免重新进场。
+    for (id, (old_id, team)) in ids.into_iter().zip(teams) {
+        if old_id == current {
+            avatars.cur_team_id = id;
+        }
+        avatars.team_map.insert(id, team);
+    }
+    Ok(())
+}
+
 #[instrument(skip_all)]
 pub fn set_up_avatar_team(
     mut client_messages: MessageReader<ClientMessageEvent>,
@@ -372,6 +439,102 @@ pub fn set_up_avatar_team(
             continue;
         };
         match message.message_name() {
+            "AddBackupAvatarTeamReq" => {
+                if message.decode_json().is_none() {
+                    continue;
+                }
+                let result = (|| -> Result<(), Retcode> {
+                    let avatars = player
+                        .avatar_bin
+                        .as_mut()
+                        .ok_or(Retcode::RetCanNotFindTeam)?;
+                    let id = (5..=20)
+                        .find(|id| !avatars.team_map.contains_key(id))
+                        .ok_or(Retcode::RetFullBackupTeam)?;
+                    avatars.team_map.insert(id, Default::default());
+                    avatars.backup_team_id_order_list.push(id);
+                    Ok(())
+                })();
+                if result.is_ok() {
+                    all_teams_notify(player, &out);
+                }
+                out.send(
+                    uid,
+                    "AddBackupAvatarTeamRsp",
+                    AddBackupAvatarTeamRsp {
+                        retcode: result.err().unwrap_or(Retcode::RetSucc).into(),
+                    },
+                );
+            }
+            "DelBackupAvatarTeamReq" => {
+                let Some(req) = message.decode::<DelBackupAvatarTeamReq>() else {
+                    continue;
+                };
+                let result = (|| -> Result<(), Retcode> {
+                    let avatars = player
+                        .avatar_bin
+                        .as_mut()
+                        .ok_or(Retcode::RetCanNotFindTeam)?;
+                    if req.backup_avatar_team_id <= 4
+                        || !avatars.team_map.contains_key(&req.backup_avatar_team_id)
+                    {
+                        return Err(Retcode::RetBackupTeamIdNotValid);
+                    }
+                    if avatars.cur_team_id == req.backup_avatar_team_id {
+                        return Err(Retcode::RetBackupTeamIsCurTeam);
+                    }
+                    avatars.team_map.remove(&req.backup_avatar_team_id);
+                    avatars
+                        .backup_team_id_order_list
+                        .retain(|id| *id != req.backup_avatar_team_id);
+                    Ok(())
+                })();
+                if result.is_ok() {
+                    all_teams_notify(player, &out);
+                }
+                out.send(
+                    uid,
+                    "DelBackupAvatarTeamRsp",
+                    DelBackupAvatarTeamRsp {
+                        backup_avatar_team_id: req.backup_avatar_team_id,
+                        retcode: result.err().unwrap_or(Retcode::RetSucc).into(),
+                    },
+                );
+            }
+            "MoveTeamReq" => {
+                let Some(req) = message.decode_json() else {
+                    continue;
+                };
+                let field = |key| {
+                    req.get(key)
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| u32::try_from(v).ok())
+                        .unwrap_or(0)
+                };
+                let from = field("from_team_id");
+                let to = field("to_team_id");
+                let result = can_change_team(player, multiplayer).and_then(|_| {
+                    move_team(
+                        player
+                            .avatar_bin
+                            .as_mut()
+                            .ok_or(Retcode::RetCanNotFindTeam)?,
+                        from,
+                        to,
+                    )
+                });
+                if result.is_ok() {
+                    all_teams_notify(player, &out);
+                }
+                out.send_json(
+                    uid,
+                    "MoveTeamRsp",
+                    serde_json::json!({
+                        "retcode": i32::from(result.err().unwrap_or(Retcode::RetSucc)),
+                        "from_team_id": from, "to_team_id": to,
+                    }),
+                );
+            }
             "SetUpAvatarTeamReq" => {
                 let Some(request) = message.decode::<SetUpAvatarTeamReq>() else {
                     continue;
@@ -511,7 +674,13 @@ pub fn set_up_avatar_team(
                     if request.team_id <= 0 {
                         return Err(Retcode::RetCanNotFindTeam);
                     }
-                    if request.team_name.encode_utf16().count() > 20
+                    let max_length = snezhnaya_gi_data::excel::production::ProductionConfig::get()
+                        .constants
+                        .get("CONST_VALUE_TEAMNAME_MAX_LENGTH")
+                        .and_then(|v| v.first())
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(16);
+                    if request.team_name.encode_utf16().count() > max_length
                         || request
                             .team_name
                             .chars()

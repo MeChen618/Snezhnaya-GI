@@ -37991,7 +37991,8 @@ message NJKOGGMLCDA {
 }
 
 // CmdId: 29601
-message FDEKPLHGAHF {
+// RawName: FDEKPLHGAHF
+message AddBackupAvatarTeamReq {
 }
 
 // CmdId: 29017
