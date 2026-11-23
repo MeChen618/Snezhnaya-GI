@@ -201,6 +201,7 @@ impl PlayerWorld {
             snezhnaya_gi_script::next_script_wakeup(self.0.world()),
             snezhnaya_gi_misc::next_wakeup(self.0.world()),
             snezhnaya_gi_inventory::next_wakeup(self.0.world()),
+            snezhnaya_gi_avatar::next_wakeup(self.0.world()),
         ]
         .into_iter()
         .flatten()

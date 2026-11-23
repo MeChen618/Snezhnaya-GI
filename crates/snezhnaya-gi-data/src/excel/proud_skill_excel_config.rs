@@ -19,6 +19,10 @@ pub struct ProudSkillExcelConfig {
     #[serde(default)]
     pub param_list: Vec<f32>,
     #[serde(default)]
+    pub life_effect_type: InternString,
+    #[serde(default)]
+    pub life_effect_params: Vec<InternString>,
+    #[serde(default)]
     pub proud_skill_group_id: u32,
     #[serde(default)]
     pub proud_skill_id: u32,

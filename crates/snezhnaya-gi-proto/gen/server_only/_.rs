@@ -12357,6 +12357,12 @@ pub struct AvatarExpeditionBin {
     #[prost(float, tag = "6")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub shorten_ratio: f32,
+    #[prost(float, optional, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub extra_output_ratio: ::core::option::Option<f32>,
+    #[prost(uint32, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub extra_output_probability: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

@@ -301,6 +301,13 @@ pub fn client_avatar_info(
         wearing_flycloak_id: avatar_bin.wearing_flycloak_id,
         costume_id: avatar_bin.costume_id,
         trace_effect_id: avatar_bin.trace_effect_id,
+        expedition_state: match avatar_bin.detail.as_ref() {
+            Some(avatar_bin::Detail::FormalAvatar(formal)) => formal
+                .expedition_data
+                .as_ref()
+                .map_or(0, |e| e.state as i32),
+            _ => 0,
+        },
         fetter_info: Some(AvatarFetterInfo {
             exp_level: fetter.map_or(1, |f| f.level.max(1)),
             exp_number: fetter.map_or(0, |f| f.exp),

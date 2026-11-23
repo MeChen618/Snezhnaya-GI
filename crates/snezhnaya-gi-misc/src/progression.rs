@@ -60,6 +60,8 @@ pub(super) fn counter_key(trigger: &Trigger) -> Option<(&'static str, u32)> {
         "TRIGGER_FORGE_WEAPON" => ("forge_weapon", 0),
         "TRIGGER_DO_COMBINE" | "TRIGGER_COMBINE_ITEM" => ("combine", 0),
         "TRIGGER_DO_COMPOUND" => ("compound", 0),
+        "TRIGGER_START_AVATAR_EXPEDITION" => ("expedition_start", 0),
+        "TRIGGER_AVATAR_EXPEDITION" => ("expedition_complete", 0),
         "TRIGGER_OPEN_CHEST_WITH_GADGET_ID" => ("chest", trigger.param(0)),
         _ => return None,
     })

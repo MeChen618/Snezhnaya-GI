@@ -156,6 +156,8 @@ message AvatarExpeditionBin {
   fixed32 start_time = 4;
   uint64 transaction = 5;
   float shorten_ratio = 6;
+  optional float extra_output_ratio = 10001;
+  uint32 extra_output_probability = 10002;
 }
 
 message AvatarSkillDepotBin {
