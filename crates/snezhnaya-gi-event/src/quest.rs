@@ -10,6 +10,12 @@ pub struct QuestFinishEvent(pub u32, pub u32);
 pub struct QuestFailEvent(pub u32, pub u32);
 
 #[derive(Message)]
+pub struct DailyTaskFinishEvent {
+    pub player_uid: u32,
+    pub daily_task_id: u32,
+}
+
+#[derive(Message)]
 pub struct QuestContentProgressEvent {
     pub player_uid: u32,
     pub content_type: snezhnaya_gi_data::quest::quest_config::QuestContent,

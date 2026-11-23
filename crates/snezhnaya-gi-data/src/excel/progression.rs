@@ -219,6 +219,7 @@ pub struct ProgressionConfig {
     pub activity_watchers: BTreeMap<u32, ActivityWatcher>,
     pub player_level_exp: BTreeMap<u32, u32>,
     pub player_level_rewards: BTreeMap<u32, u32>,
+    pub fetter_level_exp: BTreeMap<u32, u32>,
     pub chapter_end_quests: BTreeMap<u32, u32>,
 }
 
@@ -248,6 +249,11 @@ impl ProgressionConfig {
             level: u32,
             exp: u32,
             reward_id: u32,
+        }
+        #[derive(Deserialize)]
+        struct FetterLevel {
+            fetter_level: u32,
+            need_exp: u32,
         }
         #[derive(Deserialize, Default)]
         #[serde(default, rename_all = "camelCase")]
@@ -359,6 +365,10 @@ impl ProgressionConfig {
                 .iter()
                 .filter(|r| r.reward_id != 0)
                 .map(|r| (r.level, r.reward_id))
+                .collect(),
+            fetter_level_exp: rows::<FetterLevel>(root, "AvatarFettersLevelExcelConfigData")?
+                .into_iter()
+                .map(|r| (r.fetter_level, r.need_exp))
                 .collect(),
             chapter_end_quests: rows::<Chapter>(root, "ChapterExcelConfigData")?
                 .into_iter()

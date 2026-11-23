@@ -61,11 +61,13 @@ impl Plugin for EventRegistryPlugin {
             .add_message::<ChallengeFinishEvent>()
             .add_message::<ChallengeProgressEvent>()
             .add_message::<MonsterKillEvent>()
+            .add_message::<DailyTaskGroupsRefreshEvent>()
             //quest
             .add_message::<QuestAcceptCondEvent>()
             .add_message::<QuestAcceptEvent>()
             .add_message::<QuestFinishEvent>()
             .add_message::<QuestFailEvent>()
+            .add_message::<DailyTaskFinishEvent>()
             .add_message::<QuestContentProgressEvent>()
             .add_message::<QuestExecEvent>()
             //scene

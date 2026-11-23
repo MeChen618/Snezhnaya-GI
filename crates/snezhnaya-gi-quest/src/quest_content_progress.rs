@@ -1,6 +1,6 @@
 use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::excel::common::QuestState;
-use snezhnaya_gi_data::quest;
+use snezhnaya_gi_data::quest::{self, quest_config::QuestCond};
 use snezhnaya_gi_event::quest::*;
 use snezhnaya_gi_message::output::MessageOutput;
 use snezhnaya_gi_persistence::Players;
@@ -296,6 +296,53 @@ fn evaluate_accept_cond(
                     }
                 }
                 snezhnaya_gi_data::quest::quest_config::QuestCond::IsWorldOwner => true,
+                QuestCond::DailyTaskOpen => player_info
+                    .basic_bin
+                    .as_ref()
+                    .is_some_and(|basic| basic.level >= 12),
+                QuestCond::DailyTaskRewardCanGet | QuestCond::DailyTaskRewardReceived => {
+                    let met = player_info.daily_task_bin.as_ref().is_some_and(|daily| {
+                        if cond.r#type == QuestCond::DailyTaskRewardCanGet {
+                            daily.finished_num >= 4 && !daily.is_taken_score_reward
+                        } else {
+                            daily.is_taken_score_reward
+                        }
+                    });
+                    met == cond.param.first().is_none_or(|&value| value != 0)
+                }
+                QuestCond::DailyTaskStart
+                | QuestCond::DailyTaskInProgress
+                | QuestCond::DailyTaskFinished => {
+                    let finished = cond.r#type == QuestCond::DailyTaskFinished;
+                    cond.param.first().is_some_and(|&id| {
+                        player_info.daily_task_bin.as_ref().is_some_and(|daily| {
+                            daily.task_list.iter().any(|task| {
+                                task.daily_task_id == id && task.is_finished == finished
+                            })
+                        })
+                    })
+                }
+                QuestCond::DailyTaskVarEq
+                | QuestCond::DailyTaskVarGt
+                | QuestCond::DailyTaskVarLt => {
+                    if let [task_id, index, expected, ..] = cond.param.as_slice() {
+                        let value = player_info
+                            .daily_task_bin
+                            .as_ref()
+                            .and_then(|daily| daily.task_var_map.get(task_id))
+                            .and_then(|vars| vars.int32_list.get(*index as usize))
+                            .copied()
+                            .unwrap_or(0);
+                        let expected = *expected as i32;
+                        match cond.r#type {
+                            QuestCond::DailyTaskVarEq => value == expected,
+                            QuestCond::DailyTaskVarGt => value > expected,
+                            _ => value < expected,
+                        }
+                    } else {
+                        false
+                    }
+                }
                 snezhnaya_gi_data::quest::quest_config::QuestCond::OpenStateEqual => true,
                 snezhnaya_gi_data::quest::quest_config::QuestCond::LuaNotify => true,
                 snezhnaya_gi_data::quest::quest_config::QuestCond::QuestVarEqual => {

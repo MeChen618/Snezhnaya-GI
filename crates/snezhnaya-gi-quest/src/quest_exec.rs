@@ -37,6 +37,7 @@ pub fn quest_exec(
     mut quest_accept_events: MessageWriter<QuestAcceptEvent>,
     mut spawn_group_entity_events: MessageWriter<SpawnGroupEntityEvent>,
     mut lua_trigger_events: MessageWriter<LuaTriggerEvent>,
+    mut daily_finish_events: MessageWriter<DailyTaskFinishEvent>,
 ) {
     let sub_quest_config_collection = quest::quest_config::get_sub_quest_config_collection();
 
@@ -64,6 +65,57 @@ pub fn quest_exec(
             let params = &exec_param.param;
 
             match exec_param.r#type {
+                QuestExec::NotifyDailyTask => {
+                    let task_id = param_u32(params, 0);
+                    if player_info.daily_task_bin.as_ref().is_some_and(|s| {
+                        s.task_list
+                            .iter()
+                            .any(|t| t.daily_task_id == task_id && !t.is_finished)
+                    }) {
+                        daily_finish_events.write(DailyTaskFinishEvent {
+                            player_uid: event.player_uid,
+                            daily_task_id: task_id,
+                        });
+                    }
+                }
+                QuestExec::SetDailyTaskVar
+                | QuestExec::IncDailyTaskVar
+                | QuestExec::DecDailyTaskVar => {
+                    let task = param_u32(params, 0);
+                    let index = param_u32(params, 1) as usize;
+                    if index >= 32
+                        || !snezhnaya_gi_data::excel::daily_task::DailyTaskConfig::get()
+                            .tasks
+                            .contains_key(&task)
+                    {
+                        continue;
+                    }
+                    let delta = if params.len() > 2 {
+                        param_i32(params, 2)
+                    } else {
+                        1
+                    };
+                    let state = player_info
+                        .daily_task_bin
+                        .get_or_insert_with(Default::default);
+                    let vars = &mut state.task_var_map.entry(task).or_default().int32_list;
+                    if vars.len() <= index {
+                        vars.resize(index + 1, 0);
+                    }
+                    let value = match exec_param.r#type {
+                        QuestExec::SetDailyTaskVar => Some(delta),
+                        QuestExec::IncDailyTaskVar => vars[index].checked_add(delta),
+                        _ => vars[index].checked_sub(delta),
+                    };
+                    if let Some(value) = value {
+                        vars[index] = value;
+                        message_output.send_json(
+                            event.player_uid,
+                            "TaskVarNotify",
+                            serde_json::json!({"task_var_list":[{"key":task,"value_list":vars}]}),
+                        );
+                    }
+                }
                 QuestExec::RefreshGroupSuite => {
                     for entry in param_str(params, 1).split(';') {
                         let parts: Vec<&str> = entry.split(',').collect();

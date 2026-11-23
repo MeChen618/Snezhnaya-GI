@@ -4,6 +4,8 @@ use snezhnaya_gi_data::scene::script_cache::SCENE_GROUP_COLLECTION;
 use snezhnaya_gi_data::scene::{EventType, Position, ScriptCommand};
 use snezhnaya_gi_event::combat::PlayerMoveEvent;
 use snezhnaya_gi_event::lua::{LuaTriggerEvent, ScriptCommandEvent};
+use snezhnaya_gi_event::{lua::DailyTaskGroupsRefreshEvent, scene::WorldOwnerUID};
+use snezhnaya_gi_persistence::Players;
 use std::{
     collections::{HashMap, HashSet},
     time::{Duration, Instant},
@@ -30,6 +32,56 @@ impl Default for GroupLoadManager {
             player_regions: HashMap::new(),
             cd: Duration::from_millis(3000),
             region_entry_cd: Duration::from_millis(1000),
+        }
+    }
+}
+
+fn daily_group_active(players: &Players, owner: u32, group: u32) -> bool {
+    let config = snezhnaya_gi_data::excel::daily_task::DailyTaskConfig::get();
+    if !config.groups.contains(&group) {
+        return true;
+    }
+    players
+        .get(owner)
+        .and_then(|p| p.daily_task_bin.as_ref())
+        .is_some_and(|s| {
+            s.task_list.iter().filter(|t| !t.is_finished).any(|t| {
+                config
+                    .tasks
+                    .get(&t.daily_task_id)
+                    .is_some_and(|t| t.new_group_vec.contains(&group))
+            })
+        })
+}
+
+pub fn refresh_daily_groups(
+    mut events: MessageReader<DailyTaskGroupsRefreshEvent>,
+    owner: Res<WorldOwnerUID>,
+    mut manager: ResMut<GroupLoadManager>,
+    mut commands: MessageWriter<ScriptCommandEvent>,
+    players: Res<Players>,
+    mut moves: MessageWriter<PlayerMoveEvent>,
+) {
+    for event in events.read().filter(|e| e.owner_uid == owner.0) {
+        for &group_id in &event.group_ids {
+            if manager.groups.remove(&group_id) {
+                commands.write(ScriptCommandEvent {
+                    command: ScriptCommand::UnloadGroup { group_id },
+                });
+            }
+            for groups in manager.player_groups.values_mut() {
+                groups.remove(&group_id);
+            }
+            snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache()
+                .reset_group(owner.0, group_id);
+        }
+        manager.last_load.clear();
+        if let Some(scene) = players.get(owner.0).and_then(|p| p.scene_bin.as_ref()) {
+            if scene.my_cur_scene_id == 3 {
+                if let Some(position) = scene.my_cur_scene_pos {
+                    moves.write(PlayerMoveEvent(owner.0, 3, position.into(), false));
+                }
+            }
         }
     }
 }
@@ -71,7 +123,10 @@ pub fn handle_player_move_for_group_loading(
     mut events: MessageReader<PlayerMoveEvent>,
     mut group_load_manager: ResMut<GroupLoadManager>,
     mut script_command_events: MessageWriter<ScriptCommandEvent>,
+    players: Res<Players>,
+    owner: Res<WorldOwnerUID>,
 ) {
+    let active = |group: &u32| daily_group_active(&players, owner.0, *group);
     for ev in events.read() {
         tracing::trace!(
             "PlayerMoveEvent: uid={}, scene={}, pos={:?}",
@@ -130,6 +185,9 @@ pub fn handle_player_move_for_group_loading(
         let load_target: HashSet<u32> = nearby_group_ids
             .iter()
             .filter(|group_id| {
+                if !active(group_id) {
+                    return false;
+                }
                 if group_load_manager.groups.contains(*group_id) {
                     return false;
                 }
@@ -154,6 +212,9 @@ pub fn handle_player_move_for_group_loading(
             .groups
             .iter()
             .filter(|group_id| {
+                if !active(group_id) {
+                    return true;
+                }
                 !other_player_groups.contains(*group_id) && {
                     let (this_scene_id, this_position) = get_group_position(**group_id);
                     if this_scene_id != scene_id {

@@ -97,3 +97,9 @@ pub struct MonsterKillEvent {
     pub config_id: u32,
     pub monster_id: u32,
 }
+
+#[derive(Message)]
+pub struct DailyTaskGroupsRefreshEvent {
+    pub owner_uid: u32,
+    pub group_ids: Vec<u32>,
+}

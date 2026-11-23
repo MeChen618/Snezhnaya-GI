@@ -9,7 +9,7 @@ mod script_lua_vm;
 mod script_timer;
 
 use crate::challenge_manager::{
-    ChallengeManager, ChallengeTimer, ChallengeUpdateResult, challenge_timer_system,
+    challenge_timer_system, ChallengeManager, ChallengeTimer, ChallengeUpdateResult,
 };
 use crate::challenge_notify::{
     handle_challenge_finish_event, handle_challenge_progress_event, handle_challenge_start_event,
@@ -19,10 +19,11 @@ use crate::script_entity::{
     spawn_suite_entities,
 };
 use crate::script_group_manager::{
-    GroupLoadManager, handle_player_move_for_group_loading, handle_player_move_for_region_entry,
+    handle_player_move_for_group_loading, handle_player_move_for_region_entry,
+    refresh_daily_groups, GroupLoadManager,
 };
 use crate::script_lib::{
-    BevyScriptLib, GroupVariableStore, call_lua_on_be_hurt, call_lua_on_client_execute_req,
+    call_lua_on_be_hurt, call_lua_on_client_execute_req, BevyScriptLib, GroupVariableStore,
 };
 use crate::script_load::{GroupLoadState, SceneGroupRuntime};
 use crate::script_lua_vm::LuaRuntime;
@@ -31,13 +32,13 @@ use bevy_ecs::prelude::*;
 use common::player_cache::cache_get_scene_level;
 use crossbeam_queue::SegQueue;
 use mlua::Function;
-use script_timer::{ScriptTimers, script_timer_system};
+use script_timer::{script_timer_system, ScriptTimers};
 use snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache;
 use snezhnaya_gi_data::scene::{EventType, GadgetState, LuaEvt, ScriptCommand};
 use snezhnaya_gi_entity::common::{
     BlockId, ConfigId, EntityCounter, GroupId, ProtocolEntityID, Visible,
 };
-use snezhnaya_gi_entity::gadget::{State, spawn_gadget_entity};
+use snezhnaya_gi_entity::gadget::{spawn_gadget_entity, State};
 use snezhnaya_gi_entity::monster::spawn_monster_entity;
 use snezhnaya_gi_event::entity::{GadgetStateChangeEvent, SetWorktopOptionsEvent};
 use snezhnaya_gi_event::lua::{
@@ -49,8 +50,8 @@ use snezhnaya_gi_event::lua::{
 use snezhnaya_gi_event::quest::QuestContentProgressEvent;
 use snezhnaya_gi_event::scene::{WorldOwnerUID, WorldVersionConfig};
 use snezhnaya_gi_message::output::MessageOutput;
-use snezhnaya_gi_proto::normal::GatherGadgetInfo;
 use snezhnaya_gi_proto::normal::scene_gadget_info::Content;
+use snezhnaya_gi_proto::normal::GatherGadgetInfo;
 use snezhnaya_gi_proto::server_only::VectorBin;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -154,6 +155,13 @@ impl Plugin for ScriptPlugin {
                     ScriptSet::Triggers,
                 )
                     .chain(),
+            )
+            .add_systems(
+                Update,
+                refresh_daily_groups
+                    .in_set(ScriptSet::Collect)
+                    .before(script_command_system)
+                    .before(handle_player_move_for_group_loading),
             )
             .add_systems(Update, script_command_system.in_set(ScriptSet::Collect))
             .add_systems(

@@ -9,8 +9,8 @@ use snezhnaya_gi_proto::{
     normal::*,
     retcode::Retcode,
     server_only::{
-        equip_bin, item_bin, EquipBin, ItemBin, MaterialBin, PlayerDataBin, PlayerItemCompBin,
-        ReliquaryBin, WeaponBin,
+        avatar_bin, equip_bin, item_bin, AvatarFetterBin, EquipBin, ItemBin, MaterialBin,
+        PlayerDataBin, PlayerItemCompBin, ReliquaryBin, WeaponBin,
     },
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -26,6 +26,7 @@ pub struct InventoryChange {
     pub rewards: Amounts,
     pub resin_changed: bool,
     pub unlocked_name_cards: Vec<u32>,
+    pub fetter_changed: Vec<u64>,
 }
 
 pub fn add_amount(items: &mut Amounts, id: u32, count: u32) -> InventoryResult<()> {
@@ -184,6 +185,7 @@ fn transact_inner(
         .clone();
     let mut counter = player.guid_counter;
     let mut experience = None;
+    let mut fetter_updates = BTreeMap::new();
     let mut change = InventoryChange {
         rewards: rewards.clone(),
         ..Default::default()
@@ -286,6 +288,54 @@ fn transact_inner(
     }
     for (&id, &count) in rewards {
         if count == 0 {
+            continue;
+        }
+        if id == 105 {
+            let avatars = player
+                .avatar_bin
+                .as_ref()
+                .ok_or(Retcode::RetCanNotFindAvatar)?;
+            let table = &progression::ProgressionConfig::get().fetter_level_exp;
+            let max = *table.keys().max().ok_or(Retcode::RetNotFoundConfig)?;
+            for guid in avatars
+                .cur_avatar_guid_list
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+            {
+                let Some(avatar) = avatars.avatar_map.get(&guid) else {
+                    continue;
+                };
+                if matches!(avatar.avatar_id, 10000005 | 10000007) {
+                    continue;
+                }
+                let Some(avatar_bin::Detail::FormalAvatar(formal)) = &avatar.detail else {
+                    continue;
+                };
+                let mut fetter = formal.fetter.clone().unwrap_or(AvatarFetterBin {
+                    level: 1,
+                    ..Default::default()
+                });
+                if fetter.level >= max {
+                    continue;
+                }
+                fetter.level = fetter.level.max(1);
+                let mut exp = u64::from(fetter.exp) + u64::from(count);
+                while fetter.level < max {
+                    let need = *table.get(&fetter.level).ok_or(Retcode::RetNotFoundConfig)?;
+                    if need == 0 || exp < u64::from(need) {
+                        break;
+                    }
+                    exp -= u64::from(need);
+                    fetter.level += 1;
+                }
+                fetter.exp = if fetter.level >= max {
+                    0
+                } else {
+                    u32::try_from(exp).map_err(|_| Retcode::RetItemExceedLimit)?
+                };
+                fetter_updates.insert(guid, fetter);
+            }
             continue;
         }
         if id == 102 {
@@ -438,6 +488,19 @@ fn transact_inner(
         basic.level = level;
         basic.exp = exp;
     }
+    for (guid, fetter) in fetter_updates {
+        let avatar = player
+            .avatar_bin
+            .as_mut()
+            .unwrap()
+            .avatar_map
+            .get_mut(&guid)
+            .unwrap();
+        if let Some(avatar_bin::Detail::FormalAvatar(formal)) = &mut avatar.detail {
+            formal.fetter = Some(fetter);
+            change.fetter_changed.push(guid);
+        }
+    }
     for (&id, &count) in &total_costs {
         snezhnaya_gi_persistence::record_progress(player, "cost", id, count);
     }
@@ -555,6 +618,50 @@ pub fn notify_transaction(
             player.uid,
             "UnlockNameCardNotify",
             UnlockNameCardNotify { name_card_id },
+        );
+    }
+    if !change.fetter_changed.is_empty() {
+        let mut map = HashMap::new();
+        for guid in &change.fetter_changed {
+            let Some(avatar) = player
+                .avatar_bin
+                .as_ref()
+                .and_then(|a| a.avatar_map.get(guid))
+            else {
+                continue;
+            };
+            let Some(avatar_bin::Detail::FormalAvatar(formal)) = &avatar.detail else {
+                continue;
+            };
+            let Some(fetter) = &formal.fetter else {
+                continue;
+            };
+            map.insert(
+                *guid,
+                AvatarFetterInfo {
+                    exp_level: fetter.level,
+                    exp_number: fetter.exp,
+                    rewarded_fetter_level_list: fetter.rewarded_fetter_level_list.clone(),
+                    fetter_list: FetterDataConfig::get_fetter_data_entries()
+                        .get(&avatar.avatar_id)
+                        .into_iter()
+                        .flatten()
+                        .map(|f| FetterData {
+                            fetter_id: f.fetter_id,
+                            fetter_state: 3,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+            );
+        }
+        output.send(
+            player.uid,
+            "AvatarFetterDataNotify",
+            AvatarFetterDataNotify {
+                fetter_info_map: map,
+            },
         );
     }
     if change.resin_changed {

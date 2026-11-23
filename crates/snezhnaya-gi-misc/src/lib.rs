@@ -1,7 +1,8 @@
 use bevy_app::prelude::*;
 mod activity;
-mod mail;
+mod daily_task;
 mod ley_line;
+mod mail;
 mod progression;
 use bevy_ecs::prelude::*;
 
@@ -20,12 +21,23 @@ pub struct MiscPlugin;
 impl Plugin for MiscPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneTime::default())
-            .add_systems(PreStartup, (progression::login, activity::login,mail::login).chain())
+            .add_systems(
+                PreStartup,
+                (
+                    progression::login,
+                    activity::login,
+                    mail::login,
+                    daily_task::login,
+                )
+                    .chain(),
+            )
             .init_resource::<ley_line::Challenges>()
+            .init_resource::<daily_task::DailyWakeup>()
             .add_systems(
                 Update,
                 (
                     mail::handle,
+                    daily_task::handle,
                     progression::handle,
                     activity::handle,
                     ley_line::handle,
@@ -35,12 +47,17 @@ impl Plugin for MiscPlugin {
             )
             .add_systems(
                 Last,
-                (ley_line::update, ley_line::apply_monster_scaling)
+                (
+                    ley_line::update,
+                    ley_line::apply_monster_scaling,
+                    daily_task::update,
+                    daily_task::observe,
+                    progression::observe,
+                )
                     .chain()
                     .after(snezhnaya_gi_entity::EntitySystemSet::HandleEntityDeath)
                     .before(snezhnaya_gi_entity::EntitySystemSet::HandleEntityCleanup),
             )
-            .add_systems(PostUpdate, progression::observe)
             .add_systems(Startup, init_scene_time)
             .add_systems(PreUpdate, set_pause)
             .add_systems(PreUpdate, client_set_game_time)
@@ -74,7 +91,10 @@ fn update_scene_clock(mut time: ResMut<SceneTime>) {
     time.scene_time = time.elapsed_ms();
 }
 pub fn next_wakeup(world: &World) -> Option<std::time::Instant> {
-    ley_line::next_wakeup(world)
+    [ley_line::next_wakeup(world), daily_task::next_wakeup(world)]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 pub fn init_scene_time(mut time: ResMut<SceneTime>) {

@@ -2974,6 +2974,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "common",
+ "serde_json",
  "snezhnaya-gi-data",
  "snezhnaya-gi-event",
  "snezhnaya-gi-message",

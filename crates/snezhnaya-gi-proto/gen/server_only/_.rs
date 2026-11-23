@@ -14027,7 +14027,7 @@ pub struct PlayerOfflineMsgCompBin {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DailyTaskInfoBin {
     #[prost(uint32, tag = "1")]
     #[serde(skip_serializing_if = "crate::is_default")]
@@ -14044,6 +14044,17 @@ pub struct DailyTaskInfoBin {
     #[prost(uint32, tag = "5")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub preview_reward_id: u32,
+    #[prost(map = "uint32, message", tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub pending_reward_map: ::std::collections::HashMap<u32, DailyTaskRewardBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DailyTaskRewardBin {
+    #[prost(map = "uint32, uint32", tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub item_map: ::std::collections::HashMap<u32, u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -14110,6 +14121,9 @@ pub struct PlayerDailyTaskCompBin {
     #[prost(message, repeated, tag = "14")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub cycle_quest_list: ::prost::alloc::vec::Vec<DailyTaskCycleQuestBin>,
+    #[prost(message, repeated, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub pending_task_rewards: ::prost::alloc::vec::Vec<DailyTaskInfoBin>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

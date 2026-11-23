@@ -806,6 +806,11 @@ message DailyTaskInfoBin {
   uint32 progress = 3;
   bool is_finished = 4;
   uint32 preview_reward_id = 5;
+  map<uint32, DailyTaskRewardBin> pending_reward_map = 10001;
+}
+
+message DailyTaskRewardBin {
+  map<uint32, uint32> item_map = 1;
 }
 
 message DailyTaskCycleQuestBin {
@@ -832,6 +837,7 @@ message PlayerDailyTaskCompBin {
   uint32 filter_city_id = 11;
   uint32 random_city_id = 12;
   repeated DailyTaskCycleQuestBin cycle_quest_list = 14;
+  repeated DailyTaskInfoBin pending_task_rewards = 10001;
 }
 
 message PlayerRandTaskCompBin {
