@@ -638,17 +638,7 @@ fn notify_investigation(player: &b::PlayerDataBin, output: &MessageOutput) {
 }
 
 pub fn reward_items(ids: impl IntoIterator<Item = u32>) -> Result<Amounts, Retcode> {
-    let mut result = Amounts::new();
-    for id in ids {
-        let row = ProgressionConfig::get()
-            .rewards
-            .get(&id)
-            .ok_or(Retcode::RetItemInvalidTarget)?;
-        for item in &row.reward_item_list {
-            inventory::add_amount(&mut result, item.item_id, item.item_count)?;
-        }
-    }
-    Ok(result)
+    inventory::reward_items(ids)
 }
 fn add_points(state: &mut b::BattlePassScheduleBin, mut points: u32) {
     let table = &ProgressionConfig::get().pass_level_points;

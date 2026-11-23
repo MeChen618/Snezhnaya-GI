@@ -15,6 +15,7 @@ impl Plugin for AvatarPlugin {
             .add_systems(
                 Update,
                 (
+                    progression::handle_rewards,
                     progression::handle,
                     equip::apply_equip_change_to_avatar_entity,
                 )

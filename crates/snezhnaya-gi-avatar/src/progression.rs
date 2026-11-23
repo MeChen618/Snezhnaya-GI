@@ -479,3 +479,144 @@ pub fn handle(
         }
     }
 }
+
+pub fn handle_rewards(
+    mut events: MessageReader<ClientMessageEvent>,
+    mut players: ResMut<Players>,
+    out: Res<MessageOutput>,
+) {
+    for message in events.read() {
+        if !matches!(
+            message.message_name(),
+            "AvatarFetterLevelRewardReq" | "AvatarPromoteGetRewardReq"
+        ) {
+            continue;
+        }
+        let Some(request) = message.decode_json() else {
+            continue;
+        };
+        let guid = request
+            .get("avatar_guid")
+            .and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok()))
+            .unwrap_or(0);
+        let friendship = message.message_name() == "AvatarFetterLevelRewardReq";
+        let field = if friendship {
+            "fetter_level"
+        } else {
+            "promote_level"
+        };
+        let level = request
+            .get(field)
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u32::try_from(n).ok())
+            .unwrap_or(0);
+        let Some(player) = players.get_mut(message.sender_uid()) else {
+            continue;
+        };
+        let result = claim_avatar_reward(player, guid, level, friendship, &out);
+        let mut response = serde_json::json!({"avatar_guid":guid.to_string(),"retcode":result.as_ref().err().map_or(0,|code|i32::from(*code)),"reward_id":result.as_ref().copied().unwrap_or(0)});
+        response[field] = level.into();
+        if friendship {
+            response["reward_id_list"] =
+                serde_json::json!(result.ok().into_iter().collect::<Vec<_>>());
+        }
+        out.send_json(
+            player.uid,
+            if friendship {
+                "AvatarFetterLevelRewardRsp"
+            } else {
+                "AvatarPromoteGetRewardRsp"
+            },
+            response,
+        );
+    }
+}
+fn claim_avatar_reward(
+    player: &mut PlayerDataBin,
+    guid: u64,
+    level: u32,
+    friendship: bool,
+    out: &MessageOutput,
+) -> InventoryResult<u32> {
+    let mut avatar = player
+        .avatar_bin
+        .as_ref()
+        .and_then(|a| a.avatar_map.get(&guid))
+        .cloned()
+        .ok_or(Retcode::RetCanNotFindAvatar)?;
+    let Some(avatar_bin::Detail::FormalAvatar(formal)) = &mut avatar.detail else {
+        return Err(Retcode::RetAvatarCanNotUse);
+    };
+    let reward = if friendship {
+        let fetter = formal
+            .fetter
+            .as_mut()
+            .ok_or(Retcode::RetFetterRewardLevelNotEnough)?;
+        if level > fetter.level {
+            return Err(Retcode::RetFetterRewardLevelNotEnough);
+        }
+        if fetter.rewarded_fetter_level_list.contains(&level) {
+            return Err(Retcode::RetFetterRewardAlreadyGot);
+        }
+        let reward =
+            character_card_reward(avatar.avatar_id, level).ok_or(Retcode::RetItemInvalidTarget)?;
+        fetter.rewarded_fetter_level_list.push(level);
+        reward
+    } else {
+        if level > avatar.promote_level {
+            return Err(Retcode::RetAvatarBreakLevelLessThan);
+        }
+        if formal.taken_promote_reward_level_list.contains(&level) {
+            return Err(Retcode::RetRewardHasTaken);
+        }
+        let config = avatar_excel_config_collection::get()
+            .get(&avatar.avatar_id)
+            .ok_or(Retcode::RetNotFoundConfig)?;
+        let index = config
+            .avatar_promote_reward_level_list
+            .iter()
+            .position(|l| *l == level)
+            .ok_or(Retcode::RetItemInvalidTarget)?;
+        let reward = *config
+            .avatar_promote_reward_id_list
+            .get(index)
+            .filter(|id| **id != 0)
+            .ok_or(Retcode::RetNotFoundConfig)?;
+        formal.taken_promote_reward_level_list.push(level);
+        reward
+    };
+    let rewards = snezhnaya_gi_inventory::transaction::reward_items([reward])?;
+    let change = transact(player, &Amounts::new(), &rewards, &[])?;
+    player
+        .avatar_bin
+        .as_mut()
+        .unwrap()
+        .avatar_map
+        .insert(guid, avatar);
+    notify_transaction(out, player, &change);
+    if friendship {
+        let avatar = &player.avatar_bin.as_ref().unwrap().avatar_map[&guid];
+        let info = crate::util::client_avatar_info(avatar)
+            .and_then(|a| a.fetter_info)
+            .unwrap_or_else(|| {
+                let Some(avatar_bin::Detail::FormalAvatar(f)) = &avatar.detail else {
+                    unreachable!()
+                };
+                let fetter = f.fetter.as_ref().unwrap();
+                AvatarFetterInfo {
+                    exp_level: fetter.level,
+                    exp_number: fetter.exp,
+                    rewarded_fetter_level_list: fetter.rewarded_fetter_level_list.clone(),
+                    ..Default::default()
+                }
+            });
+        out.send(
+            player.uid,
+            "AvatarFetterDataNotify",
+            AvatarFetterDataNotify {
+                fetter_info_map: std::collections::HashMap::from([(guid, info)]),
+            },
+        );
+    }
+    Ok(reward)
+}

@@ -56,6 +56,20 @@ pub fn scale_items(items: &[production::ItemAmount], count: u32) -> InventoryRes
     Ok(result)
 }
 
+pub fn reward_items(ids: impl IntoIterator<Item = u32>) -> InventoryResult<Amounts> {
+    let mut items = Amounts::new();
+    for id in ids {
+        let row = progression::ProgressionConfig::get()
+            .rewards
+            .get(&id)
+            .ok_or(Retcode::RetItemInvalidTarget)?;
+        for item in &row.reward_item_list {
+            add_amount(&mut items, item.item_id, item.item_count)?;
+        }
+    }
+    Ok(items)
+}
+
 fn currency(items: &PlayerItemCompBin, id: u32) -> Option<u32> {
     match id {
         106 => Some(items.resin_record.as_ref().map_or(0, |r| r.value)),

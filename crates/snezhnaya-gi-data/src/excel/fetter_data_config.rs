@@ -52,6 +52,26 @@ impl FetterDataConfigKeyed<u32> for FetterDataConfig {
             list.append(&mut sub_list);
         }
 
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Card {
+            avatar_id: u32,
+            fetter_level: u32,
+            reward_id: u32,
+        }
+        let cards: Vec<Card> = serde_json::from_slice(
+            &std::fs::read(format!(
+                "{excel_bin_output_path}/FetterCharacterCardExcelConfigData.json"
+            ))
+            .expect("read friendship rewards"),
+        )
+        .expect("parse friendship rewards");
+        let _ = CHARACTER_CARDS.set(
+            cards
+                .into_iter()
+                .map(|r| ((r.avatar_id, r.fetter_level), r.reward_id))
+                .collect(),
+        );
         let data = list.iter().map(|item| (item.key(), item.clone())).collect();
 
         data
@@ -80,4 +100,9 @@ impl FetterDataConfigKeyed<u32> for FetterDataConfig {
             FETTER_DATA_ENTRIES.get().unwrap()
         }
     }
+}
+
+static CHARACTER_CARDS: std::sync::OnceLock<HashMap<(u32, u32), u32>> = std::sync::OnceLock::new();
+pub fn character_card_reward(avatar: u32, level: u32) -> Option<u32> {
+    CHARACTER_CARDS.get()?.get(&(avatar, level)).copied()
 }
