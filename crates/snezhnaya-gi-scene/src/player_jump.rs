@@ -100,63 +100,47 @@ pub fn player_jump_by_point(
     mut players: ResMut<Players>,
     mut enter_events: MessageWriter<BeginEnterSceneEvent>,
 ) {
-    let scene_point_config_collection_clone =
-        snezhnaya_gi_data::scene::scene_point_config::get_scene_point_config_collection();
     for ScenePlayerJumpByPointEvent(uid, scene_id, point_id) in events.read() {
-        match scene_point_config_collection_clone.get(&scene_id) {
-            None => {}
-            Some(scene_config) => match scene_config.points.get(&point_id) {
-                None => {}
-                Some(point_config) => {
-                    let mut tran_scene_id = point_config.tran_scene_id;
-
-                    if tran_scene_id == 0 {
-                        tran_scene_id = *scene_id;
-                    }
-
-                    let Some(player_info) = players.get_mut(*uid) else {
-                        continue;
-                    };
-
-                    snezhnaya_gi_persistence::restore_dungeon_team(player_info);
-                    let Some(ref player_scene_bin) = player_info.scene_bin else {
-                        continue;
-                    };
-
-                    let mut enter_type = snezhnaya_gi_proto::normal::EnterType::EnterJump;
-                    if tran_scene_id == player_scene_bin.my_cur_scene_id {
-                        enter_type = snezhnaya_gi_proto::normal::EnterType::EnterGoto;
-                    }
-
-                    let mut enter_reason = EnterReason::TransPoint;
-
-                    if player_info.dungeon_bin.is_some() {
-                        player_info.dungeon_bin = None;
-                        enter_type = snezhnaya_gi_proto::normal::EnterType::EnterDungeon;
-                        enter_reason = EnterReason::DungeonEnter;
-                    }
-
-                    let destination = VectorBin::from((
-                        point_config.tran_pos.x,
-                        point_config.tran_pos.y,
-                        point_config.tran_pos.z,
-                    ));
-
-                    if let Some(ref mut player_scene_bin) = player_info.scene_bin {
-                        player_scene_bin.my_cur_scene_id = tran_scene_id;
-                        player_scene_bin.my_cur_scene_pos = destination.into();
-                    }
-                    enter_events.write(BeginEnterSceneEvent {
-                        uid: *uid,
-                        scene_id: tran_scene_id,
-                        dungeon_id: 0,
-                        enter_type,
-                        enter_reason,
-                        position: destination,
-                    });
-                }
+        let Some((dest, point)) =
+            snezhnaya_gi_data::scene::scene_point_config::resolve_point(*scene_id, *point_id)
+        else {
+            continue;
+        };
+        let Some(player) = players.get_mut(*uid) else {
+            continue;
+        };
+        let previous = player.scene_bin.as_ref().map_or(0, |s| s.my_cur_scene_id);
+        let quitting = player
+            .dungeon_bin
+            .as_ref()
+            .is_some_and(|d| d.cur_dungeon_id != 0);
+        snezhnaya_gi_persistence::restore_dungeon_team(player);
+        player.dungeon_bin = None;
+        let position = VectorBin::from((point.tran_pos.x, point.tran_pos.y, point.tran_pos.z));
+        let Some(scene) = player.scene_bin.as_mut() else {
+            continue;
+        };
+        scene.my_prev_scene_id = previous;
+        scene.my_cur_scene_id = dest;
+        scene.my_cur_scene_pos = Some(position);
+        scene.my_cur_scene_rot =
+            Some((point.tran_rot.x, point.tran_rot.y, point.tran_rot.z).into());
+        enter_events.write(BeginEnterSceneEvent {
+            uid: *uid,
+            scene_id: dest,
+            dungeon_id: 0,
+            enter_type: if previous == dest {
+                snezhnaya_gi_proto::normal::EnterType::EnterGoto
+            } else {
+                snezhnaya_gi_proto::normal::EnterType::EnterJump
             },
-        }
+            enter_reason: if quitting {
+                EnterReason::DungeonQuit
+            } else {
+                EnterReason::TransPoint
+            },
+            position,
+        });
     }
 }
 

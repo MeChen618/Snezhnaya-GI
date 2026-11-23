@@ -17,6 +17,7 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PreStartup, initialize_maps)
+            .add_systems(Startup,on_map::login_marks)
             .add_systems(Update, handbook::handle)
             .add_systems(PreUpdate, data_request_processor)
             .add_systems(PreUpdate, on_map::message_on_map)

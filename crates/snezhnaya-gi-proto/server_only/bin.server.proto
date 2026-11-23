@@ -320,6 +320,7 @@ message MapMarkPointBin {
   uint32 monster_id = 5;
   uint32 from_type = 6;
   uint32 quest_id = 7;
+  uint32 map_layer_id = 10001;
 }
 
 message GroupBossChestBin {

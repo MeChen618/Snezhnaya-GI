@@ -12818,6 +12818,9 @@ pub struct MapMarkPointBin {
     #[prost(uint32, tag = "7")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub quest_id: u32,
+    #[prost(uint32, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub map_layer_id: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

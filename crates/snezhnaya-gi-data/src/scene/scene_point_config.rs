@@ -124,3 +124,35 @@ pub fn load_scene_point_configs_from_bin(bin_output_path: &str) {
     let _ = SCENE_POINT_CONFIG_COLLECTION.set(Arc::new(data));
     let _ = SCENE_POINT_ENTRY_MAP_COLLECTION.set(Arc::new(entry_map));
 }
+
+pub fn resolve_point(scene: u32, point: u32) -> Option<(u32, ScenePointData)> {
+    let configs = get_scene_point_config_collection();
+    let data = configs.get(&scene)?.points.get(&point)?;
+    if data.point_type.as_str() != "SceneTransPoint" && data.tran_scene_id == 0 {
+        return None;
+    }
+    let dest = if data.tran_scene_id == 0 {
+        scene
+    } else {
+        data.tran_scene_id
+    };
+    if !configs.contains_key(&dest)
+        && !super::script_cache::get_scene_config_collection().contains_key(&dest)
+    {
+        return None;
+    }
+    if ![
+        data.tran_pos.x,
+        data.tran_pos.y,
+        data.tran_pos.z,
+        data.tran_rot.x,
+        data.tran_rot.y,
+        data.tran_rot.z,
+    ]
+    .iter()
+    .all(|v| v.is_finite())
+    {
+        return None;
+    }
+    Some((dest, data.clone()))
+}
