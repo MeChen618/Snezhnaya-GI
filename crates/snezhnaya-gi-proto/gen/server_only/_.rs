@@ -18545,6 +18545,18 @@ pub struct PlayerMailCompBin {
     #[prost(bool, tag = "5")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub is_collectible_mail_transfered: bool,
+    #[prost(map = "uint32, message", tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub mail_map: ::std::collections::HashMap<u32, MailData>,
+    #[prost(uint32, tag = "10002")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub mail_id_counter: u32,
+    #[prost(map = "string, uint32", tag = "10003")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub mail_source_id_map: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        u32,
+    >,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

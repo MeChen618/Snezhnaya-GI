@@ -2632,6 +2632,9 @@ message PlayerMailCompBin {
   map<uint32, uint32> action_seq_map = 3;
   map<string, MailBin> new_wait_add_mail_map = 4;
   bool is_collectible_mail_transfered = 5;
+  map<uint32, MailData> mail_map = 10001;
+  uint32 mail_id_counter = 10002;
+  map<string, uint32> mail_source_id_map = 10003;
 }
 
 message ShopGoodsRecordBin {

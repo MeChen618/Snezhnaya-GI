@@ -1,5 +1,6 @@
 use bevy_app::prelude::*;
 mod activity;
+mod mail;
 mod ley_line;
 mod progression;
 use bevy_ecs::prelude::*;
@@ -19,11 +20,12 @@ pub struct MiscPlugin;
 impl Plugin for MiscPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneTime::default())
-            .add_systems(PreStartup, (progression::login, activity::login).chain())
+            .add_systems(PreStartup, (progression::login, activity::login,mail::login).chain())
             .init_resource::<ley_line::Challenges>()
             .add_systems(
                 Update,
                 (
+                    mail::handle,
                     progression::handle,
                     activity::handle,
                     ley_line::handle,
