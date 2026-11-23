@@ -38,7 +38,8 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<EnterSceneStateSystems>()
+        app.add_systems(PreStartup, avatar::init_teams)
+            .init_resource::<EnterSceneStateSystems>()
             .insert_resource(PlayerSceneStates::default())
             .insert_resource(ScenePeerManager::default())
             .add_systems(PostStartup, init_scene)
@@ -46,8 +47,7 @@ impl Plugin for ScenePlugin {
                 PreUpdate,
                 enter::handle_enter_scene_state_change.after(replace_avatar_team),
             )
-            .add_systems(PreUpdate, (set_up_avatar_team, replace_avatar_team).chain())
-            .add_systems(PreUpdate, change_avatar)
+            .add_systems(PreUpdate, (set_up_avatar_team, replace_avatar_team, change_avatar).chain())
             .add_systems(Update, player_join_team::player_join_team)
             .add_systems(Update, player_jump::player_jump)
             .add_systems(Update, player_jump::player_jump_by_point)

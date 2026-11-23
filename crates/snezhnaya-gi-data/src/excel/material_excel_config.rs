@@ -212,6 +212,12 @@ pub struct ItemUse {
 pub struct MaterialExcelConfig {
     pub id: u32,
     #[serde(default)]
+    pub destroy_rule: super::common::DestroyRule,
+    #[serde(default)]
+    pub destroy_return_material: Vec<u32>,
+    #[serde(default)]
+    pub destroy_return_material_count: Vec<u32>,
+    #[serde(default)]
     pub stack_limit: u32,
     pub item_type: ItemType,
     #[serde(default)]

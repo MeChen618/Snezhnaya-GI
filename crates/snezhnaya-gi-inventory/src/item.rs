@@ -490,3 +490,123 @@ pub fn random_offset_vec3((x, y, z): (f32, f32, f32), rng: &mut SmallRng) -> (f3
 
     (x + dx, y + dy, z + dz)
 }
+
+pub fn handle_inventory_request(
+    mut messages: MessageReader<snezhnaya_gi_message::event::ClientMessageEvent>,
+    mut players: ResMut<Players>,
+    output: Res<MessageOutput>,
+) {
+    use snezhnaya_gi_proto::normal::{DestroyMaterialReq, DestroyMaterialRsp};
+    for message in messages.read() {
+        if message.message_name() != "DestroyMaterialReq" {
+            continue;
+        }
+        let Some(request) = message.decode::<DestroyMaterialReq>() else {
+            continue;
+        };
+        let Some(player) = players.get_mut(message.sender_uid()) else {
+            continue;
+        };
+        let response = destroy_materials(player, &request, &output).unwrap_or_else(|code| {
+            DestroyMaterialRsp {
+                retcode: code.into(),
+                ..Default::default()
+            }
+        });
+        output.send(player.uid, "DestroyMaterialRsp", response);
+    }
+}
+
+fn destroy_materials(
+    player: &mut snezhnaya_gi_proto::server_only::PlayerDataBin,
+    request: &snezhnaya_gi_proto::normal::DestroyMaterialReq,
+    output: &MessageOutput,
+) -> crate::transaction::InventoryResult<snezhnaya_gi_proto::normal::DestroyMaterialRsp> {
+    use crate::transaction::*;
+    use snezhnaya_gi_data::excel::common::DestroyRule;
+    use snezhnaya_gi_proto::{normal::DestroyMaterialRsp, retcode::Retcode};
+    if request.material_list.is_empty() || request.material_list.len() > 30_000 {
+        return Err(Retcode::RetItemInvalidUseCount);
+    }
+    let items = player.item_bin.as_ref().ok_or(Retcode::RetItemNotExist)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut materials = Vec::new();
+    let mut equips = Vec::new();
+    let mut rewards = Amounts::new();
+    for entry in &request.material_list {
+        if entry.count == 0 || !seen.insert(entry.guid) {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        let item = items
+            .get_item(&entry.guid)
+            .ok_or(Retcode::RetItemNotExist)?;
+        let (rule, ids, counts) = match &item.detail {
+            Some(item_bin::Detail::Material(_)) => {
+                let config = material_excel_config_collection::get()
+                    .get(&item.item_id)
+                    .ok_or(Retcode::RetNotFoundConfig)?;
+                if config.item_type != ItemType::MATERIAL || config.use_on_gain {
+                    return Err(Retcode::RetItemNotDropable);
+                }
+                materials.push((entry.guid, entry.count));
+                (
+                    config.destroy_rule,
+                    &config.destroy_return_material,
+                    &config.destroy_return_material_count,
+                )
+            }
+            Some(item_bin::Detail::Equip(equip)) => {
+                if entry.count != 1 {
+                    return Err(Retcode::RetItemInvalidUseCount);
+                }
+                equips.push(entry.guid);
+                match &equip.detail {
+                    Some(equip_bin::Detail::Weapon(_)) => {
+                        let config = weapon_excel_config_collection::get()
+                            .get(&item.item_id)
+                            .ok_or(Retcode::RetNotFoundConfig)?;
+                        (
+                            config.destroy_rule,
+                            &config.destroy_return_material,
+                            &config.destroy_return_material_count,
+                        )
+                    }
+                    Some(equip_bin::Detail::Reliquary(_)) => {
+                        let config = reliquary_excel_config_collection::get()
+                            .get(&item.item_id)
+                            .ok_or(Retcode::RetNotFoundConfig)?;
+                        (
+                            config.destroy_rule,
+                            &config.destroy_return_material,
+                            &config.destroy_return_material_count,
+                        )
+                    }
+                    _ => return Err(Retcode::RetItemNotDropable),
+                }
+            }
+            _ => return Err(Retcode::RetItemNotDropable),
+        };
+        if rule != DestroyRule::ReturnMaterial {
+            return Err(Retcode::RetItemNotDropable);
+        }
+        if ids.len() != counts.len() {
+            return Err(Retcode::RetNotFoundConfig);
+        }
+        for (&id, &count) in ids.iter().zip(counts) {
+            add_amount(
+                &mut rewards,
+                id,
+                count
+                    .checked_mul(entry.count)
+                    .ok_or(Retcode::RetItemExceedLimit)?,
+            )?;
+        }
+    }
+    let change = transact_items(player, &materials, &equips, &rewards)?;
+    notify_transaction(output, player, &change);
+    Ok(DestroyMaterialRsp {
+        item_id_list: rewards.keys().copied().collect(),
+        item_count_list: rewards.values().copied().collect(),
+        ..Default::default()
+    })
+}

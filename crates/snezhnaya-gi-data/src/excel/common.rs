@@ -539,3 +539,14 @@ pub struct AddProp {
     #[serde(default)]
     pub value: f32,
 }
+
+#[derive(Debug, Default, Copy, Clone, serde::Deserialize, PartialEq, Eq)]
+pub enum DestroyRule {
+    #[default]
+    #[serde(alias = "DESTROY_NONE")]
+    None,
+    #[serde(alias = "DESTROY_RETURN_MATERIAL")]
+    ReturnMaterial,
+    #[serde(other)]
+    Unknown,
+}

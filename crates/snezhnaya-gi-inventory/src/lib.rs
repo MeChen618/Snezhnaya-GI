@@ -28,6 +28,7 @@ impl Plugin for InventoryPlugin {
                 production::handle,
                 reliquary::handle,
                 shop::handle,
+                item::handle_inventory_request,
                 item::item_command_handler,
                 item::item_add_handler,
                 item::update_player_store,

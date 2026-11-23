@@ -127,6 +127,7 @@ pub fn sync_avatar_data(players: Res<Players>, message_output: Res<MessageOutput
                     })
                     .collect(),
                 cur_avatar_team_id: player_avatar_bin.cur_team_id,
+                backup_avatar_team_order_list: player_avatar_bin.backup_team_id_order_list.clone(),
                 owned_flycloak_list: player_avatar_bin
                     .owned_flycloak_list
                     .iter()

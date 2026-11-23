@@ -2,95 +2,132 @@ use bevy_ecs::prelude::*;
 use snezhnaya_gi_data::prop_type::FightPropType;
 use snezhnaya_gi_entity::avatar::ReplaceCurrentPlayerAvatarMarker;
 use snezhnaya_gi_entity::avatar::{AvatarQueryReadOnly, CurrentPlayerAvatarMarker};
-use snezhnaya_gi_entity::common::{FightProperties, LifeState, Visible};
+use snezhnaya_gi_entity::common::{FightProperties, LifeState, ToBeRemovedMarker, Visible};
 use snezhnaya_gi_entity::transform::Transform;
 use snezhnaya_gi_event::entity::{EntityDisappearEvent, EntityPropertySeparateUpdateEvent};
 use snezhnaya_gi_event::scene::*;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
-use snezhnaya_gi_proto::dy_parser::{
-    replace_in_u32, replace_in_u64, replace_out_i32, replace_out_u32, replace_out_u64,
-};
 use snezhnaya_gi_proto::normal::{
     AvatarDieAnimationEndReq, AvatarDieAnimationEndRsp, AvatarTeam, AvatarTeamUpdateNotify,
-    ChangeAvatarReq, ChangeAvatarRsp, SetUpAvatarTeamReq, SetUpAvatarTeamRsp, VisionType,
+    ChangeAvatarReq, ChangeAvatarRsp, ChangeTeamNameReq, ChangeTeamNameRsp, ChooseCurAvatarTeamReq,
+    ChooseCurAvatarTeamRsp, SetUpAvatarTeamReq, SetUpAvatarTeamRsp, VisionType,
 };
 use snezhnaya_gi_proto::retcode::Retcode;
-use std::collections::HashSet;
+use snezhnaya_gi_proto::server_only::{avatar_bin, PlayerAvatarCompBin, PlayerDataBin};
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, instrument};
 
 pub fn change_avatar(
     mut client_messages: MessageReader<ClientMessageEvent>,
     mut commands: Commands,
     mut players: ResMut<Players>,
-    avatars: Query<(
-        Entity,
-        &FightProperties,
-        &LifeState,
-        AvatarQueryReadOnly,
-        Option<&CurrentPlayerAvatarMarker>,
-    )>,
+    avatars: Query<
+        (
+            Entity,
+            &FightProperties,
+            &LifeState,
+            AvatarQueryReadOnly,
+            Option<&CurrentPlayerAvatarMarker>,
+        ),
+        Without<ToBeRemovedMarker>,
+    >,
     message_output: Res<MessageOutput>,
     mut update_separate_property_entity_events: MessageWriter<EntityPropertySeparateUpdateEvent>,
     mut disappear_events: MessageWriter<EntityDisappearEvent>,
 ) {
+    let mut positions = HashMap::new();
     for message in client_messages.read() {
         match message.message_name() {
             "ChangeAvatarReq" => {
-                if let Some(request) = message.decode::<ChangeAvatarReq>() {
-                    let Some((cur_entity, _, _, cur_avatar_data, _)) =
-                        avatars.iter().find(|(_, _, _, data, is_cur)| {
-                            data.owner_player_uid.0 == message.sender_uid() && is_cur.is_some()
+                let Some(request) = message.decode::<ChangeAvatarReq>() else {
+                    continue;
+                };
+                let uid = message.sender_uid();
+                let Some(player) = players.get_mut(uid) else {
+                    continue;
+                };
+                let current = player.avatar_bin.as_ref().map_or(0, |a| a.cur_avatar_guid);
+                let result = (|| -> Result<_, Retcode> {
+                    if common::player_cache::cache_get_is_tp(uid).unwrap_or(false) {
+                        return Err(Retcode::RetInTransfer);
+                    }
+                    let stored = player
+                        .avatar_bin
+                        .as_ref()
+                        .ok_or(Retcode::RetCanNotFindAvatar)?;
+                    if !stored.avatar_map.contains_key(&request.guid) {
+                        return Err(Retcode::RetCanNotFindAvatar);
+                    }
+                    if !stored.cur_avatar_guid_list.contains(&request.guid) {
+                        return Err(Retcode::RetAvatarNotExistInTeam);
+                    }
+                    let (old_entity, _, _, old, current_marker) = avatars
+                        .iter()
+                        .find(|(_, _, _, data, _)| {
+                            data.owner_player_uid.0 == uid && data.guid.0 == current
                         })
-                    else {
-                        tracing::error!("ChangeAvatarReq error");
-                        continue;
-                    };
-
-                    if cur_avatar_data.guid.0 != request.guid {
-                        if let Some((new_entity, _, _, _, _)) =
-                            avatars.iter().find(|(_, _, _, data, _)| {
-                                data.owner_player_uid.0 == message.sender_uid()
-                                    && data.guid.0 == request.guid
-                            })
-                        {
+                        .ok_or(Retcode::RetAvatarNotOnScene)?;
+                    if current_marker.is_none() && !positions.contains_key(&uid) {
+                        return Err(Retcode::RetAvatarNotOnScene);
+                    }
+                    let (new_entity, _, life, _, _) = avatars
+                        .iter()
+                        .find(|(_, _, _, data, _)| {
+                            data.owner_player_uid.0 == uid && data.guid.0 == request.guid
+                        })
+                        .ok_or(Retcode::RetAvatarNotOnScene)?;
+                    if *life != LifeState::Alive {
+                        return Err(Retcode::RetAvatarNotAlive);
+                    }
+                    let position = positions
+                        .entry(uid)
+                        .or_insert_with(|| old.transform.clone())
+                        .clone();
+                    Ok((old_entity, new_entity, old.entity_id.0, position))
+                })();
+                let retcode = match result {
+                    Ok((old_entity, new_entity, old_id, position)) => {
+                        if current != request.guid {
+                            // 同一帧连续切人也按存档里的当前角色衔接，避免留下多个出场标记。
                             commands
-                                .entity(cur_entity)
+                                .entity(old_entity)
                                 .remove::<CurrentPlayerAvatarMarker>()
                                 .remove::<Visible>();
-
                             disappear_events.write(EntityDisappearEvent(
-                                cur_avatar_data.entity_id.0,
+                                old_id,
                                 VisionType::VisionReplace.into(),
                             ));
-
-                            commands
-                                .entity(new_entity)
-                                .insert(CurrentPlayerAvatarMarker)
-                                .insert(Visible)
-                                .insert(ReplaceCurrentPlayerAvatarMarker(
-                                    cur_avatar_data.entity_id.0,
-                                ));
-
-                            let Some(player_info) = players.get_mut(message.sender_uid()) else {
-                                continue;
-                            };
-                            if let Some(ref mut player_avatar_bin) = player_info.avatar_bin {
-                                player_avatar_bin.cur_avatar_guid = request.guid;
+                            commands.entity(new_entity).insert((
+                                CurrentPlayerAvatarMarker,
+                                Visible,
+                                ReplaceCurrentPlayerAvatarMarker(old_id),
+                                position.clone(),
+                            ));
+                            let stored = player.avatar_bin.as_mut().unwrap();
+                            stored.cur_avatar_guid = request.guid;
+                            if let Some(team) = stored.team_map.get_mut(&stored.cur_team_id) {
+                                team.last_cur_avatar_guid = request.guid;
                             }
-
-                            message_output.send(
-                                message.sender_uid(),
-                                "ChangeAvatarRsp",
-                                ChangeAvatarRsp {
-                                    cur_guid: request.guid,
-                                    skill_id: request.skill_id,
-                                    retcode: Retcode::RetSucc.into(),
-                                },
-                            );
+                            stored.last_change_avatar_time = common::time_util::unix_timestamp_ms();
+                            if let Some(scene) = player.scene_bin.as_mut() {
+                                scene.my_cur_scene_pos = Some(position.position);
+                                scene.my_cur_scene_rot = Some(position.rotation);
+                            }
                         }
+                        Retcode::RetSucc
                     }
-                }
+                    Err(code) => code,
+                };
+                message_output.send(
+                    uid,
+                    "ChangeAvatarRsp",
+                    ChangeAvatarRsp {
+                        cur_guid: player.avatar_bin.as_ref().map_or(0, |a| a.cur_avatar_guid),
+                        skill_id: request.skill_id,
+                        retcode: retcode.into(),
+                    },
+                );
             }
             "AvatarDieAnimationEndReq" => {
                 if let Some(request) = message.decode::<AvatarDieAnimationEndReq>() {
@@ -206,122 +243,302 @@ pub fn change_avatar(
     }
 }
 
+pub fn init_teams(mut players: ResMut<Players>) {
+    for player in players.values_mut() {
+        let Some(avatars) = player.avatar_bin.as_mut() else {
+            continue;
+        };
+        for id in 1..=4 {
+            avatars.team_map.entry(id).or_default();
+        }
+        let mut seen = HashSet::new();
+        avatars
+            .backup_team_id_order_list
+            .retain(|id| *id > 4 && avatars.team_map.contains_key(id) && seen.insert(*id));
+        let mut remaining: Vec<_> = avatars
+            .team_map
+            .keys()
+            .filter(|id| **id > 4 && !seen.contains(id))
+            .copied()
+            .collect();
+        remaining.sort_unstable();
+        avatars.backup_team_id_order_list.extend(remaining);
+    }
+}
+
+fn can_change_team(player: &PlayerDataBin, multiplayer: bool) -> Result<(), Retcode> {
+    if multiplayer {
+        return Err(Retcode::RetMpInMpMode);
+    }
+    if common::player_cache::cache_get_is_tp(player.uid).unwrap_or(false) {
+        return Err(Retcode::RetInTransfer);
+    }
+    if player
+        .dungeon_bin
+        .as_ref()
+        .is_some_and(|d| d.cur_dungeon_id != 0)
+    {
+        return Err(Retcode::RetCurDungeonNotAllowSwitchTeam);
+    }
+    if player
+        .avatar_bin
+        .as_ref()
+        .is_some_and(|a| !a.temp_avatar_guid_list.is_empty() || a.cur_team_id == 0)
+    {
+        return Err(Retcode::RetIsUsingTempAvatar);
+    }
+    Ok(())
+}
+fn validate_team(avatars: &PlayerAvatarCompBin, guids: &[u64]) -> Result<(), Retcode> {
+    if guids.len() > 4 {
+        return Err(Retcode::RetTeamCostExceedLimit);
+    }
+    let mut seen = HashSet::new();
+    let mut ids = HashSet::new();
+    for guid in guids {
+        if !seen.insert(*guid) {
+            return Err(Retcode::RetDuplicateAvatar);
+        }
+        let avatar = avatars
+            .avatar_map
+            .get(guid)
+            .ok_or(Retcode::RetCanNotFindAvatar)?;
+        if !matches!(avatar.detail, Some(avatar_bin::Detail::FormalAvatar(_))) {
+            return Err(Retcode::RetIsUsingTrialAvatar);
+        }
+        if !ids.insert(avatar.avatar_id) {
+            return Err(Retcode::RetDuplicateAvatar);
+        }
+    }
+    Ok(())
+}
+fn select_alive(
+    avatars: &PlayerAvatarCompBin,
+    guids: &[u64],
+    preferred: u64,
+) -> Result<u64, Retcode> {
+    let alive = |guid: &u64| {
+        avatars
+            .avatar_map
+            .get(guid)
+            .is_some_and(|a| a.life_state == LifeState::Alive as u32)
+    };
+    if guids.contains(&preferred) && alive(&preferred) {
+        return Ok(preferred);
+    }
+    guids
+        .iter()
+        .find(|guid| alive(guid))
+        .copied()
+        .ok_or(Retcode::RetAvatarNotAlive)
+}
+fn team_notify(player: &PlayerDataBin, out: &MessageOutput) {
+    let Some(avatars) = player.avatar_bin.as_ref() else {
+        return;
+    };
+    out.send(
+        player.uid,
+        "AvatarTeamUpdateNotify",
+        AvatarTeamUpdateNotify {
+            avatar_team_map: avatars
+                .team_map
+                .iter()
+                .map(|(&id, team)| {
+                    (
+                        id,
+                        AvatarTeam {
+                            team_name: team.team_name.clone(),
+                            avatar_guid_list: team.avatar_guid_list.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+}
+
 #[instrument(skip_all)]
 pub fn set_up_avatar_team(
     mut client_messages: MessageReader<ClientMessageEvent>,
     out: Res<MessageOutput>,
     mut players: ResMut<Players>,
     mut change_events: MessageWriter<PlayerAvatarTeamChanged>,
-    world_version_config: Res<WorldVersionConfig>,
 ) {
+    let multiplayer = players.keys().len() > 1;
     for message in client_messages.read() {
+        let uid = message.sender_uid();
+        let Some(player) = players.get_mut(uid) else {
+            continue;
+        };
         match message.message_name() {
             "SetUpAvatarTeamReq" => {
-                if let Some(request) = message.decode::<SetUpAvatarTeamReq>() {
-                    let mut avatar_set =
-                        HashSet::with_capacity(request.avatar_team_guid_list.len());
-                    for guid in request.avatar_team_guid_list.iter() {
-                        if !avatar_set.insert(*guid) {
-                            debug!(
-                                "duplicate guid {guid} in avatar team {:?}",
-                                request.avatar_team_guid_list
-                            );
-
-                            out.send(
-                                message.sender_uid(),
-                                "SetUpAvatarTeamRsp",
-                                SetUpAvatarTeamRsp {
-                                    retcode: Retcode::RetFail.into(),
-                                    ..Default::default()
-                                },
-                            );
-                            continue;
-                        }
+                let Some(request) = message.decode::<SetUpAvatarTeamReq>() else {
+                    continue;
+                };
+                let result = (|| -> Result<_, Retcode> {
+                    let avatars = player
+                        .avatar_bin
+                        .as_ref()
+                        .ok_or(Retcode::RetCanNotFindTeam)?;
+                    if !avatars.team_map.contains_key(&request.team_id) {
+                        return Err(Retcode::RetCanNotFindTeam);
                     }
-
-                    let Some(player_info) = players.get_mut(message.sender_uid()) else {
-                        continue;
-                    };
-                    let Some(ref mut player_avatar_bin) = player_info.avatar_bin else {
-                        continue;
-                    };
-
-                    let team_id = replace_in_u32(
-                        world_version_config.protocol_version.as_str(),
-                        "SetUpAvatarTeamReq.team_id",
-                        request.team_id,
-                    );
-
-                    if let Some(team) = player_avatar_bin.team_map.get_mut(&team_id) {
-                        let mut cur_avatar_guid = replace_in_u64(
-                            world_version_config.protocol_version.as_str(),
-                            "SetUpAvatarTeamReq.cur_avatar_guid",
-                            request.cur_avatar_guid,
-                        );
-
-                        if !request.avatar_team_guid_list.contains(&cur_avatar_guid) {
-                            let Some(temp_cur_avatar_guid) = request.avatar_team_guid_list.first()
-                            else {
-                                continue;
-                            };
-                            cur_avatar_guid = *temp_cur_avatar_guid;
-                        }
-
-                        team.avatar_guid_list = request.avatar_team_guid_list.clone();
-
-                        if team_id == player_avatar_bin.cur_team_id {
-                            player_avatar_bin.cur_avatar_guid = cur_avatar_guid;
-                            player_avatar_bin.cur_avatar_guid_list =
-                                request.avatar_team_guid_list.clone();
-
-                            change_events.write(PlayerAvatarTeamChanged {
-                                uid: message.sender_uid(),
-                                avatar_team_guid_list: request.avatar_team_guid_list.clone(),
-                                cur_avatar_guid,
-                            });
-                        }
-
-                        out.send(
-                            message.sender_uid(),
-                            "SetUpAvatarTeamRsp",
-                            SetUpAvatarTeamRsp {
-                                retcode: replace_out_i32(
-                                    world_version_config.protocol_version.as_str(),
-                                    "SetUpAvatarTeamRsp.retcode",
-                                    Retcode::RetSucc.into(),
-                                ),
-                                team_id: replace_out_u32(
-                                    world_version_config.protocol_version.as_str(),
-                                    "SetUpAvatarTeamRsp.team_id",
-                                    team_id,
-                                ),
-                                cur_avatar_guid: replace_out_u64(
-                                    world_version_config.protocol_version.as_str(),
-                                    "SetUpAvatarTeamRsp.cur_avatar_guid",
-                                    cur_avatar_guid,
-                                ),
-                                avatar_team_guid_list: request.avatar_team_guid_list.clone(),
-                            },
-                        );
+                    validate_team(avatars, &request.avatar_team_guid_list)?;
+                    let active = avatars.cur_team_id == request.team_id;
+                    let preferred = if request.cur_avatar_guid != 0 {
+                        request.cur_avatar_guid
+                    } else if !active
+                        && avatars.team_map[&request.team_id].last_cur_avatar_guid != 0
+                    {
+                        avatars.team_map[&request.team_id].last_cur_avatar_guid
                     } else {
-                        debug!("team_id {} doesn't exist", request.team_id);
-
-                        out.send(
-                            message.sender_uid(),
-                            "SetUpAvatarTeamRsp",
-                            SetUpAvatarTeamRsp {
-                                retcode: replace_out_i32(
-                                    world_version_config.protocol_version.as_str(),
-                                    "SetUpAvatarTeamRsp.retcode",
-                                    Retcode::RetFail.into(),
-                                ),
-                                ..Default::default()
-                            },
-                        );
+                        avatars.cur_avatar_guid
+                    };
+                    let current = if active {
+                        can_change_team(player, multiplayer)?;
+                        select_alive(avatars, &request.avatar_team_guid_list, preferred)?
+                    } else {
+                        request
+                            .avatar_team_guid_list
+                            .iter()
+                            .copied()
+                            .find(|guid| *guid == preferred)
+                            .or_else(|| request.avatar_team_guid_list.first().copied())
+                            .unwrap_or(0)
+                    };
+                    let avatars = player.avatar_bin.as_mut().unwrap();
+                    avatars
+                        .team_map
+                        .get_mut(&request.team_id)
+                        .unwrap()
+                        .avatar_guid_list
+                        .clone_from(&request.avatar_team_guid_list);
+                    avatars
+                        .team_map
+                        .get_mut(&request.team_id)
+                        .unwrap()
+                        .last_cur_avatar_guid = current;
+                    if active {
+                        avatars.cur_avatar_guid = current;
+                        avatars
+                            .cur_avatar_guid_list
+                            .clone_from(&request.avatar_team_guid_list);
+                        change_events.write(PlayerAvatarTeamChanged {
+                            uid,
+                            avatar_team_guid_list: request.avatar_team_guid_list.clone(),
+                            cur_avatar_guid: current,
+                        });
+                    } else {
+                        team_notify(player, &out);
                     }
-                }
+                    Ok(current)
+                })();
+                out.send(
+                    uid,
+                    "SetUpAvatarTeamRsp",
+                    SetUpAvatarTeamRsp {
+                        team_id: request.team_id,
+                        cur_avatar_guid: result.as_ref().copied().unwrap_or(0),
+                        avatar_team_guid_list: request.avatar_team_guid_list,
+                        retcode: result.err().unwrap_or(Retcode::RetSucc).into(),
+                    },
+                );
             }
-            &_ => {}
+            "ChooseCurAvatarTeamReq" => {
+                let Some(request) = message.decode::<ChooseCurAvatarTeamReq>() else {
+                    continue;
+                };
+                let result = (|| -> Result<(), Retcode> {
+                    can_change_team(player, multiplayer)?;
+                    let avatars = player
+                        .avatar_bin
+                        .as_ref()
+                        .ok_or(Retcode::RetCanNotFindTeam)?;
+                    let guids = avatars
+                        .team_map
+                        .get(&request.team_id)
+                        .ok_or(Retcode::RetCanNotFindTeam)?
+                        .avatar_guid_list
+                        .clone();
+                    validate_team(avatars, &guids)?;
+                    let last = avatars.team_map[&request.team_id].last_cur_avatar_guid;
+                    let current = select_alive(
+                        avatars,
+                        &guids,
+                        if last != 0 {
+                            last
+                        } else {
+                            avatars.cur_avatar_guid
+                        },
+                    )?;
+                    let avatars = player.avatar_bin.as_mut().unwrap();
+                    avatars
+                        .team_map
+                        .get_mut(&request.team_id)
+                        .unwrap()
+                        .last_cur_avatar_guid = current;
+                    if avatars.cur_team_id == request.team_id
+                        && avatars.cur_avatar_guid_list == guids
+                        && avatars.cur_avatar_guid == current
+                    {
+                        return Ok(());
+                    }
+                    avatars.cur_team_id = request.team_id;
+                    avatars.cur_avatar_guid = current;
+                    avatars.cur_avatar_guid_list.clone_from(&guids);
+                    change_events.write(PlayerAvatarTeamChanged {
+                        uid,
+                        avatar_team_guid_list: guids,
+                        cur_avatar_guid: current,
+                    });
+                    Ok(())
+                })();
+                out.send(
+                    uid,
+                    "ChooseCurAvatarTeamRsp",
+                    ChooseCurAvatarTeamRsp {
+                        retcode: result.err().unwrap_or(Retcode::RetSucc).into(),
+                        cur_team_id: player.avatar_bin.as_ref().map_or(0, |a| a.cur_team_id),
+                    },
+                );
+            }
+            "ChangeTeamNameReq" => {
+                let Some(request) = message.decode::<ChangeTeamNameReq>() else {
+                    continue;
+                };
+                let result = (|| -> Result<(), Retcode> {
+                    if request.team_id <= 0 {
+                        return Err(Retcode::RetCanNotFindTeam);
+                    }
+                    if request.team_name.encode_utf16().count() > 20
+                        || request
+                            .team_name
+                            .chars()
+                            .any(|c| c.is_control() || matches!(c, '<' | '>'))
+                    {
+                        return Err(Retcode::RetTeamNameIllegal);
+                    }
+                    let team = player
+                        .avatar_bin
+                        .as_mut()
+                        .and_then(|a| a.team_map.get_mut(&(request.team_id as u32)))
+                        .ok_or(Retcode::RetCanNotFindTeam)?;
+                    team.team_name.clone_from(&request.team_name);
+                    team_notify(player, &out);
+                    Ok(())
+                })();
+                out.send(
+                    uid,
+                    "ChangeTeamNameRsp",
+                    ChangeTeamNameRsp {
+                        team_id: request.team_id,
+                        team_name: request.team_name,
+                        retcode: result.err().unwrap_or(Retcode::RetSucc).into(),
+                    },
+                );
+            }
+            _ => (),
         }
     }
 }
@@ -352,29 +569,6 @@ pub fn notify_avatar_team_update(
             continue;
         };
 
-        let Some(ref player_avatar_bin) = player_info.avatar_bin else {
-            continue;
-        };
-
-        out.send(
-            event.uid,
-            "AvatarTeamUpdateNotify",
-            AvatarTeamUpdateNotify {
-                temp_avatar_guid_list: Vec::with_capacity(0),
-                avatar_team_map: player_avatar_bin
-                    .team_map
-                    .iter()
-                    .map(|(idx, team)| {
-                        (
-                            *idx,
-                            AvatarTeam {
-                                team_name: team.team_name.clone(),
-                                avatar_guid_list: team.avatar_guid_list.clone(),
-                            },
-                        )
-                    })
-                    .collect(),
-            },
-        );
+        team_notify(player_info, &out);
     }
 }

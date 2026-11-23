@@ -18,6 +18,8 @@ pub struct WeaponProperty {
 #[serde(rename_all = "camelCase")]
 pub struct WeaponExcelConfig {
     pub id: u32,
+    #[serde(default)]
+    pub destroy_rule: super::common::DestroyRule,
     pub item_type: ItemType,
     pub weapon_type: WeaponType,
     #[serde(default)]

@@ -112,7 +112,7 @@ pub fn transact(
         costs,
         rewards,
         remove,
-        None,
+        &[],
         crate::consumables::timestamp(),
     )
 }
@@ -123,7 +123,7 @@ pub(super) fn transact_at(
     rewards: &Amounts,
     now: u32,
 ) -> InventoryResult<InventoryChange> {
-    transact_inner(player, costs, rewards, &[], None, now)
+    transact_inner(player, costs, rewards, &[], &[], now)
 }
 
 pub(super) fn consume_item(
@@ -132,24 +132,21 @@ pub(super) fn consume_item(
     count: u32,
     rewards: &Amounts,
 ) -> InventoryResult<InventoryChange> {
-    let item = player
-        .item_bin
-        .as_ref()
-        .and_then(|items| items.get_item(&guid))
-        .ok_or(Retcode::RetItemNotExist)?;
-    let Some(item_bin::Detail::Material(material)) = &item.detail else {
-        return Err(Retcode::RetItemNotUsable);
-    };
-    if count == 0 || material.count < count {
-        return Err(Retcode::RetItemCountNotEnough);
-    }
-    let id = item.item_id;
+    transact_items(player, &[(guid, count)], &[], rewards)
+}
+
+pub(super) fn transact_items(
+    player: &mut PlayerDataBin,
+    materials: &[(u64, u32)],
+    remove: &[u64],
+    rewards: &Amounts,
+) -> InventoryResult<InventoryChange> {
     transact_inner(
         player,
-        &Amounts::from([(id, count)]),
+        &Amounts::new(),
         rewards,
-        &[],
-        Some(guid),
+        remove,
+        materials,
         crate::consumables::timestamp(),
     )
 }
@@ -159,7 +156,7 @@ fn transact_inner(
     costs: &Amounts,
     rewards: &Amounts,
     remove: &[u64],
-    preferred_material: Option<u64>,
+    materials: &[(u64, u32)],
     now: u32,
 ) -> InventoryResult<InventoryChange> {
     let mut items = player.item_bin.clone().ok_or(Retcode::RetItemNotExist)?;
@@ -178,6 +175,28 @@ fn transact_inner(
         ..Default::default()
     };
     let mut seen = HashSet::new();
+    let mut total_costs = costs.clone();
+    // 按 GUID 扣指定的材料叠，批量销毁和单次使用共用一次提交。
+    for &(guid, count) in materials {
+        if count == 0 || !seen.insert(guid) {
+            return Err(Retcode::RetItemInvalidUseCount);
+        }
+        let item = items.get_mut_item(&guid).ok_or(Retcode::RetItemNotExist)?;
+        if item.owner_guid != 0 {
+            return Err(Retcode::RetItemInvalidTarget);
+        }
+        let Some(item_bin::Detail::Material(material)) = &mut item.detail else {
+            return Err(Retcode::RetItemNotUsable);
+        };
+        if count > material.count {
+            return Err(Retcode::RetItemCountNotEnough);
+        }
+        add_amount(&mut total_costs, item.item_id, count)?;
+        material.count -= count;
+        if material.count == 0 {
+            items.remove_item(&guid);
+        }
+    }
     for guid in remove {
         if items
             .reliquary_transmuter
@@ -191,7 +210,13 @@ fn transact_inner(
             return Err(Retcode::RetItemInvalidUseCount);
         }
         let item = items.get_item(guid).ok_or(Retcode::RetItemNotExist)?;
-        if item.owner_guid != 0 {
+        if item.owner_guid != 0
+            || player.avatar_bin.as_ref().is_some_and(|a| {
+                a.avatar_map
+                    .values()
+                    .any(|avatar| avatar.equip_map.values().any(|equip| equip.guid == *guid))
+            })
+        {
             return Err(Retcode::RetEquipHasBeenWeared);
         }
         match &item.detail {
@@ -226,8 +251,7 @@ fn transact_inner(
             .filter(|(_, item)| item.item_id == id)
             .map(|(guid, _)| *guid)
             .collect();
-        // 使用道具时优先扣请求里的那一叠，制作等操作仍按 GUID 扣除。
-        guids.sort_unstable_by_key(|guid| (Some(*guid) != preferred_material, *guid));
+        guids.sort_unstable();
         for guid in guids {
             if let Some(ItemBin {
                 detail: Some(item_bin::Detail::Material(material)),
@@ -400,7 +424,7 @@ fn transact_inner(
         basic.level = level;
         basic.exp = exp;
     }
-    for (&id, &count) in costs {
+    for (&id, &count) in &total_costs {
         snezhnaya_gi_persistence::record_progress(player, "cost", id, count);
     }
     for (&id, &count) in rewards {

@@ -6,6 +6,12 @@ use std::collections::HashMap;
 pub struct ReliquaryExcelConfig {
     pub id: u32,
     #[serde(default)]
+    pub destroy_rule: super::common::DestroyRule,
+    #[serde(default)]
+    pub destroy_return_material: Vec<u32>,
+    #[serde(default)]
+    pub destroy_return_material_count: Vec<u32>,
+    #[serde(default)]
     pub dropable: bool,
     pub item_type: ItemType,
     pub equip_type: EquipType,
