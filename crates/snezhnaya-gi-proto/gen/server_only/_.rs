@@ -19650,6 +19650,9 @@ pub struct AchievementBin {
     #[prost(uint32, tag = "3")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub finish_timestamp: u32,
+    #[prost(uint32, tag = "4")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub cur_progress: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

@@ -5,6 +5,44 @@ include!("../gen/normal/_.rs");
 
 #[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
+pub struct WatcherAllDataNotify {
+    #[prost(uint32, repeated, tag = "12")]
+    pub watcher_list: Vec<u32>,
+}
+
+#[derive(Clone, Copy, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct WatcherEventNotify {
+    #[prost(uint32, tag = "11")]
+    pub watcher_id: u32,
+    #[prost(uint32, tag = "7")]
+    pub add_progress: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct WatcherEventStageNotify {
+    #[prost(uint32, tag = "6")]
+    pub watcher_id: u32,
+    #[prost(uint32, tag = "12")]
+    pub stage: u32,
+    #[prost(uint32, tag = "14")]
+    pub add_progress: u32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct WatcherEventTypeNotify {
+    #[prost(uint32, tag = "10")]
+    pub watcher_trigger_type: u32,
+    #[prost(uint32, repeated, tag = "7")]
+    pub param_list: Vec<u32>,
+    #[prost(uint32, tag = "3")]
+    pub add_progress: u32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct TakeAllForgeOutputRsp {
     #[prost(int32, tag = "1")]
     pub retcode: i32,

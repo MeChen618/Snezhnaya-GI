@@ -3,6 +3,8 @@ use snezhnaya_gi_data::excel::{
     self,
     progression::{ProgressionConfig, Trigger},
 };
+use snezhnaya_gi_data::excel::common::QuestState;
+use snezhnaya_gi_data::quest::quest_config::QuestContent;
 use snezhnaya_gi_event::{
     lua::MonsterKillEvent, quest::QuestContentProgressEvent, scene::WorldOwnerUID,
 };
@@ -1137,6 +1139,7 @@ pub fn observe(
     mut versions: Local<HashMap<u32, (u64, u32)>>,
 ) {
     let mut dirty = HashSet::new();
+    let mut quest_changes = HashSet::new();
     for event in kills.read() {
         if let Some(player) = players.get_mut(owner.0) {
             record_progress(player, "kill", 0, 1);
@@ -1146,6 +1149,11 @@ pub fn observe(
     }
     for event in quests.read() {
         dirty.insert(event.player_uid);
+        if matches!(event.content_type, QuestContent::QuestStateEqual)
+            && event.param2 == QuestState::Finished as u32
+        {
+            quest_changes.insert(event.player_uid);
+        }
     }
     for request in requests.read() {
         if matches!(
@@ -1171,6 +1179,7 @@ pub fn observe(
                 notify_investigation(player, &output);
             }
             super::activity::notify(player, &output);
+            super::achievement::observe(player, &output, quest_changes.contains(&player.uid));
         }
     }
 }

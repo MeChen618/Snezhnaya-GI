@@ -19,6 +19,24 @@ impl Trigger {
     }
 }
 
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AchievementConfig {
+    pub id: u32,
+    pub goal_id: u32,
+    pub progress: u32,
+    pub finish_reward_id: u32,
+    pub trigger_config: Trigger,
+    is_disuse: bool,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct AchievementGoal {
+    id: u32,
+    finish_reward_id: u32,
+}
+
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Mission {
@@ -214,6 +232,8 @@ pub struct ProgressionConfig {
     pub pass_rewards: BTreeMap<(u32, u32), PassReward>,
     pub pass_level_points: BTreeMap<u32, u32>,
     pub rewards: BTreeMap<u32, Reward>,
+    pub achievements: BTreeMap<u32, AchievementConfig>,
+    pub achievement_goal_rewards: BTreeMap<u32, u32>,
     pub investigations: BTreeMap<u32, Investigation>,
     pub targets: BTreeMap<u32, Target>,
     pub activity_watchers: BTreeMap<u32, ActivityWatcher>,
@@ -347,6 +367,16 @@ impl ProgressionConfig {
             rewards: rows::<Reward>(root, "RewardExcelConfigData")?
                 .into_iter()
                 .map(|r| (r.reward_id, r))
+                .collect(),
+            achievements: rows::<AchievementConfig>(root, "AchievementExcelConfigData")?
+                .into_iter()
+                .filter(|r| !r.is_disuse && r.id != 0 && r.progress != 0)
+                .map(|r| (r.id, r))
+                .collect(),
+            achievement_goal_rewards: rows::<AchievementGoal>(root, "AchievementGoalExcelConfigData")?
+                .into_iter()
+                .filter(|r| r.finish_reward_id != 0)
+                .map(|r| (r.id, r.finish_reward_id))
                 .collect(),
             investigations: rows::<Investigation>(root, "InvestigationConfigData")?
                 .into_iter()

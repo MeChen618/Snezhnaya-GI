@@ -366,6 +366,16 @@ fn detail(player: &PlayerDataBin, viewer: u32, param: u32) -> Option<SocialDetai
         online_state: FriendOnlineState::FriendOnline as i32,
         is_mp_mode_available: true,
         name_card_id: social.name_card_id,
+        finish_achievement_num: player.achievement_bin.as_ref().map_or(0, |bin| {
+            use snezhnaya_gi_proto::normal::achievement::Status;
+            bin.achievement_list
+                .iter()
+                .filter(|entry| {
+                    entry.status == Status::Finished as u32
+                        || entry.status == Status::RewardTaken as u32
+                })
+                .count() as u32
+        }),
         is_show_avatar: social.is_show_avatar,
         is_show_constellation_num: social.is_show_constellation_num,
         show_avatar_info_list,

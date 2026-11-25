@@ -3068,6 +3068,7 @@ message AchievementBin {
   uint32 id = 1;
   uint32 status = 2;
   uint32 finish_timestamp = 3;
+  uint32 cur_progress = 4;
 }
 
 message PlayerAchievementCompBin {

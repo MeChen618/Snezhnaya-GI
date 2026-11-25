@@ -1,4 +1,5 @@
 use bevy_app::prelude::*;
+mod achievement;
 mod activity;
 mod daily_task;
 mod ley_line;
@@ -25,6 +26,7 @@ impl Plugin for MiscPlugin {
                 PreStartup,
                 (
                     progression::login,
+                    achievement::login,
                     activity::login,
                     mail::login,
                     daily_task::login,
@@ -39,6 +41,7 @@ impl Plugin for MiscPlugin {
                     mail::handle,
                     daily_task::handle,
                     progression::handle,
+                    achievement::handle,
                     activity::handle,
                     ley_line::handle,
                     ley_line::apply_monster_scaling,
