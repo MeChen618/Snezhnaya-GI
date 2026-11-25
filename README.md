@@ -49,6 +49,8 @@ bash scripts/start.sh
 
 启动脚本会同时管理 Dispatch 和游戏服，任一进程退出时清理另一个。正式构建可执行 `cargo build --locked --release --workspace -j 2`，然后 `bash scripts/start.sh release`。
 
+可用 `bash scripts/start.sh release game` 或 `bash scripts/start.sh release dispatch` 单独启动对应服务。预编译环境包运行根目录的 `start.sh`，进入后自动读取环境，菜单可选择启动全部、单独启动、校验资源或进入终端。`SNEZHNAYA_BIN_DIR` 可指定预编译文件所在目录。启动时会拦截同一服务的重复运行，按 Ctrl+C 正常停止并保存。
+
 ## 验证
 
 协议回归测试覆盖原生掩码、进场 token、地图分层、GUID、有符号属性和畸形包。资源检查读取实际配置；联网冒烟与压测工具仅在本地维护。

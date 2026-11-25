@@ -34,6 +34,7 @@ handbook/*
 *.sqlite
 /resources/
 /logs/
+/.run/
 /game-server.toml
 /dispatch-server.toml
 /game.db/
