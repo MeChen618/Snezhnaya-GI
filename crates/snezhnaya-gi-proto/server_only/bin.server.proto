@@ -72,6 +72,16 @@ message PlayerDataBin {
   uint32 uid = 10001;
   uint32 guid_counter = 10002;
   PlayerProgressionBin progression_bin = 10003;
+  PlayerDailyAttendanceBin daily_attendance_bin = 10004;
+}
+
+message PlayerDailyAttendanceBin {
+  uint32 game_day = 1;
+  uint32 accumulated_points = 2;
+  uint32 current_points = 3;
+  uint32 claimed_count = 4;
+  uint32 resin_remainder = 5;
+  fixed32 last_accumulated_reset = 6;
 }
 
 message PlayerProgressionBin {

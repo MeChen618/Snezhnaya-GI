@@ -2578,7 +2578,7 @@ cmd_id,raw_name,name
 2237,JOCJLEHHICF,FurnitureMakeHelpReq
 24138,KDEDNHACHOB,ForgeQueueDataNotify
 4610,LODMDGIPDPG,ReunionBriefInfoReq
-7297,OFKJGFHGAOL,_DailyAttendanceDataNotify
+7297,OFKJGFHGAOL,DailyAttendanceDataNotify
 23302,DHDENJJNILK,MultistagePlayInfoNotify
 2001,BIKIIJNPLPI,BIKIIJNPLPI
 21419,KCGDMBNBBOA,CookGradeDataNotify

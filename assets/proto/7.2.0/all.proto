@@ -41998,14 +41998,14 @@ message ReunionBriefInfoReq {
 }
 
 // CmdId: 7297
-message _DailyAttendanceDataNotify {
-  uint32 _daily_attendance_reward_id = 1;
-  uint32 _daily_attendance_accumulated_points = 2;
-  uint32 _daily_attendance_accumulated_reset_time = 4;
-  uint32 _daily_attendance_total_claimed_rewards = 7;
-  uint32 JHNDHDIELCG = 10;
-  uint32 PCEKHCOFECP = 12;
-  uint32 LBENIKBCBIK = 13;
+message DailyAttendanceDataNotify {
+  uint32 daily_attendance_reward_id = 1;
+  uint32 daily_attendance_accumulated_points = 2;
+  uint32 daily_attendance_accumulated_reset_time = 4;
+  uint32 daily_attendance_total_claimed_rewards = 7;
+  uint32 daily_attendance_max_points = 10;
+  uint32 daily_attendance_cur_points = 12;
+  uint32 daily_attendance_resin_remainder = 13;
 }
 
 message FishingGallerySettleInfo {

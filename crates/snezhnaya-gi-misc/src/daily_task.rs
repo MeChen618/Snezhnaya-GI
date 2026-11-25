@@ -1,4 +1,5 @@
 use bevy_ecs::prelude::*;
+use common::time_util::cn_game_day as day;
 use serde_json::{json, Value};
 use snezhnaya_gi_data::{
     custom,
@@ -11,7 +12,10 @@ use snezhnaya_gi_event::{
     quest::{DailyTaskFinishEvent, QuestAcceptCondEvent, QuestAcceptEvent},
     scene::WorldOwnerUID,
 };
-use snezhnaya_gi_inventory::transaction::{self as inventory, Amounts};
+use snezhnaya_gi_inventory::{
+    attendance,
+    transaction::{self as inventory, Amounts},
+};
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::{record_progress, Players};
 use snezhnaya_gi_proto::{retcode::Retcode, server_only as b};
@@ -20,7 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const TASK_COUNT: u32 = 4;
+const TASK_COUNT: u32 = attendance::MAX_REWARDS;
 const UNLOCK_LEVEL: u32 = 12;
 
 #[derive(Resource, Default)]
@@ -30,9 +34,6 @@ pub fn next_wakeup(world: &World) -> Option<Instant> {
 }
 fn now() -> u32 {
     common::time_util::unix_timestamp().min(u64::from(u32::MAX)) as u32
-}
-fn day(time: u32) -> u32 {
-    ((u64::from(time) + 14400) / 86400) as u32
 }
 fn unlocked(player: &b::PlayerDataBin) -> bool {
     player
@@ -47,6 +48,13 @@ fn task_info(task: &b::DailyTaskInfoBin) -> Value {
         .map_or(1, |r| r.finish_progress.max(1));
     json!({"daily_task_id":task.daily_task_id,"progress":task.progress,"finish_progress":total,"is_finished":task.is_finished,"reward_id":task.preview_reward_id})
 }
+fn score_level(player: &b::PlayerDataBin, state: &b::PlayerDailyTaskCompBin) -> u32 {
+    if state.score_player_level > 0 {
+        state.score_player_level
+    } else {
+        player.basic_bin.as_ref().map_or(0, |basic| basic.level)
+    }
+}
 fn notify(player: &b::PlayerDataBin, out: &MessageOutput) {
     if !unlocked(player) {
         return;
@@ -55,12 +63,13 @@ fn notify(player: &b::PlayerDataBin, out: &MessageOutput) {
         return;
     };
     let reward = DailyTaskConfig::get()
-        .level(state.score_player_level)
+        .level(score_level(player, state))
         .map_or(0, |r| r.score_preview_reward_id);
+    let finished = attendance::finished_count(player, now());
     out.send_json(player.uid, "DailyTaskDataNotify", json!({
-        "finished_num":state.finished_num.min(TASK_COUNT),"is_taken_score_reward":state.is_taken_score_reward,"score_reward_id":reward,
+        "finished_num":finished,"is_taken_score_reward":state.is_taken_score_reward,"score_reward_id":reward,
     }));
-    if !state.is_taken_score_reward && state.finished_num >= TASK_COUNT {
+    if state.last_time != 0 && !state.is_taken_score_reward && finished >= TASK_COUNT {
         out.send_json(
             player.uid,
             "DailyTaskScoreRewardNotify",
@@ -161,6 +170,9 @@ fn refresh_all(
 ) {
     let mut world_changed = false;
     for player in players.values_mut() {
+        if attendance::refresh(player, time) {
+            attendance::notify(player, out);
+        }
         if let Some(group_ids) = refresh(player, time, DailyTaskConfig::get()) {
             if player.uid == owner {
                 changes.write(DailyTaskGroupsRefreshEvent {
@@ -185,6 +197,10 @@ pub(super) fn login(
 ) {
     let time = now();
     for player in players.values_mut() {
+        if attendance::unlocked(player) {
+            attendance::refresh(player, time);
+            attendance::notify(player, &out);
+        }
         if unlocked(player) {
             refresh(player, time, DailyTaskConfig::get());
             if let Some(state) = &player.daily_task_bin {
@@ -230,8 +246,11 @@ pub(super) fn update(
 ) {
     let time = now();
     refresh_all(&mut players, owner.0, time, &out, &mut changes);
-    wake.0 = players.values_mut().any(|p| unlocked(p)).then(|| {
-        let next = (u64::from(day(time)) + 1) * 86400 - 14400;
+    wake.0 = players.values_mut().any(|p| unlocked(p) || attendance::unlocked(p)).then(|| {
+        let mut next = (u64::from(day(time)) + 1) * 86400 - 14400;
+        if time < attendance::ACCUMULATED_RESET_TIME {
+            next = next.min(u64::from(attendance::ACCUMULATED_RESET_TIME));
+        }
         Instant::now() + Duration::from_secs(next.saturating_sub(u64::from(time)))
     });
 }
@@ -278,14 +297,14 @@ fn claim_score(
     if !unlocked(player) {
         return Err(Retcode::RetPlayerLevelLessThan);
     }
-    if state.last_time == 0 || state.finished_num < TASK_COUNT {
+    if state.last_time == 0 || attendance::finished_count(player, now()) < TASK_COUNT {
         return Err(Retcode::RetDailyTaskNotFinish);
     }
     if state.is_taken_score_reward {
         return Err(Retcode::RetRewardHasTaken);
     }
     let level = DailyTaskConfig::get()
-        .level(state.score_player_level)
+        .level(score_level(player, state))
         .ok_or(Retcode::RetNotFoundConfig)?;
     let mut rewards = roll(level.score_drop_id)?;
     boost_fetter(&mut rewards, coop)?;
@@ -300,6 +319,35 @@ fn claim_score(
     Ok(rewards)
 }
 
+fn claim_attendance(
+    player: &mut b::PlayerDataBin,
+    time: u32,
+    out: &MessageOutput,
+) -> Result<(u32, Amounts), Retcode> {
+    if !attendance::unlocked(player) {
+        return Err(Retcode::RetDailyAttendanceNotOpen);
+    }
+    let count = attendance::claimable(player, time);
+    if count == 0 {
+        return Err(Retcode::RetDailyAttendanceRewardMax);
+    }
+    let level = player.basic_bin.as_ref().map_or(0, |basic| basic.level);
+    let reward = DailyTaskConfig::get()
+        .reward_at_level(attendance::REWARD_GROUP, level)
+        .ok_or(Retcode::RetNotFoundConfig)?;
+    let mut rewards = Amounts::new();
+    for _ in 0..count {
+        for (id, amount) in roll(reward.drop_id)? {
+            inventory::add_amount(&mut rewards, id, amount)?;
+        }
+    }
+    let change = inventory::transact(player, &Amounts::new(), &rewards, &[])?;
+    player.daily_attendance_bin.as_mut().unwrap().claimed_count += count;
+    record_progress(player, "daily_task", 0, count);
+    inventory::notify_transaction(out, player, &change);
+    Ok((count, rewards))
+}
+
 pub(super) fn handle(
     mut messages: MessageReader<ClientMessageEvent>,
     mut players: ResMut<Players>,
@@ -312,19 +360,41 @@ pub(super) fn handle(
         let name = message.message_name();
         if !matches!(
             name,
-            "DailyTaskFilterCityReq" | "TakeDailyTaskScoreRewardReq"
+            "DailyTaskFilterCityReq" | "TakeDailyTaskScoreRewardReq" | "DailyAttendanceTakeRewardReq"
         ) {
             continue;
         }
         let Some(req) = message.decode_json() else {
             continue;
         };
-        refresh_all(&mut players, owner.0, now(), &out, &mut changes);
+        let time = now();
+        refresh_all(&mut players, owner.0, time, &out, &mut changes);
         let coop = players.keys().len() > 1;
         let Some(player) = players.get_mut(message.sender_uid()) else {
             continue;
         };
-        if name == "DailyTaskFilterCityReq" {
+        if name == "DailyAttendanceTakeRewardReq" {
+            let result = claim_attendance(player, time, &out);
+            let code = result.as_ref().err().copied().unwrap_or(Retcode::RetSucc);
+            if result.is_ok() {
+                attendance::notify(player, &out);
+                notify(player, &out);
+                if attendance::finished_count(player, time) == TASK_COUNT {
+                    quest_conditions.write(QuestAcceptCondEvent {
+                        player_uid: player.uid,
+                        cond_type: snezhnaya_gi_data::quest::quest_config::QuestCond::DailyTaskRewardCanGet,
+                        param: 0,
+                    });
+                }
+            }
+            let (count, items) = result.unwrap_or_default();
+            out.send_json(
+                player.uid,
+                "DailyAttendanceTakeRewardRsp",
+                json!({"retcode":i32::from(code),"claimed_daily_task_count":count,
+                    "item_list":items.into_iter().map(|(item_id,count)|json!({"item_id":item_id,"count":count})).collect::<Vec<_>>() }),
+            );
+        } else if name == "DailyTaskFilterCityReq" {
             let city = req.get("city_id").and_then(Value::as_u64).unwrap_or(0) as u32;
             let code = if !unlocked(player) {
                 Retcode::RetPlayerLevelLessThan
@@ -371,6 +441,7 @@ fn finish_task(players: &mut Players, owner: u32, index: usize) -> Result<(), Re
         .daily_task_id;
     let task = cfg.tasks.get(&task_id).ok_or(Retcode::RetNotFoundConfig)?;
     let coop = players.keys().len() > 1;
+    let time = now();
     let mut pending = HashMap::new();
     for player in players
         .values_mut()
@@ -379,7 +450,7 @@ fn finish_task(players: &mut Players, owner: u32, index: usize) -> Result<(), Re
         let Some(state) = &player.daily_task_bin else {
             continue;
         };
-        if state.last_time == 0 || state.finished_num >= TASK_COUNT {
+        if state.last_time == 0 || attendance::finished_count(player, time) >= TASK_COUNT {
             continue;
         }
         let reward = cfg
@@ -628,7 +699,10 @@ pub(super) fn observe(
             if player
                 .daily_task_bin
                 .as_ref()
-                .is_some_and(|s| s.finished_num >= TASK_COUNT && !s.is_taken_score_reward)
+                .is_some_and(|s| {
+                    attendance::finished_count(player, now()) >= TASK_COUNT
+                        && !s.is_taken_score_reward
+                })
             {
                 quest_conditions.write(QuestAcceptCondEvent {
                     player_uid: player.uid,

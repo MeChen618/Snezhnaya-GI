@@ -12123,6 +12123,32 @@ pub struct PlayerDataBin {
     #[prost(message, optional, tag = "10003")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub progression_bin: ::core::option::Option<PlayerProgressionBin>,
+    #[prost(message, optional, tag = "10004")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub daily_attendance_bin: ::core::option::Option<PlayerDailyAttendanceBin>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PlayerDailyAttendanceBin {
+    #[prost(uint32, tag = "1")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub game_day: u32,
+    #[prost(uint32, tag = "2")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub accumulated_points: u32,
+    #[prost(uint32, tag = "3")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub current_points: u32,
+    #[prost(uint32, tag = "4")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub claimed_count: u32,
+    #[prost(uint32, tag = "5")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub resin_remainder: u32,
+    #[prost(fixed32, tag = "6")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub last_accumulated_reset: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

@@ -96,8 +96,11 @@ impl DailyTaskConfig {
             .find(|r| r.min_player_level <= level && level <= r.max_player_level)
     }
     pub fn reward(&self, task: &DailyTask, level: u32) -> Option<DailyReward> {
+        self.reward_at_level(task.task_reward_id, level)
+    }
+    pub fn reward_at_level(&self, reward_id: u32, level: u32) -> Option<DailyReward> {
         self.rewards
-            .get(&task.task_reward_id)?
+            .get(&reward_id)?
             .get(self.level(level)?.id.checked_sub(1)? as usize)
             .copied()
     }

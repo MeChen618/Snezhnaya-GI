@@ -25,6 +25,7 @@ pub struct InventoryChange {
     pub added: Vec<u64>,
     pub rewards: Amounts,
     pub resin_changed: bool,
+    pub attendance_changed: bool,
     pub unlocked_name_cards: Vec<u32>,
     pub fetter_changed: Vec<u64>,
 }
@@ -504,6 +505,9 @@ fn transact_inner(
     for (&id, &count) in &total_costs {
         snezhnaya_gi_persistence::record_progress(player, "cost", id, count);
     }
+    if let Some(&resin) = total_costs.get(&106) {
+        change.attendance_changed = crate::attendance::spend_resin(player, resin, now);
+    }
     for (&id, &count) in rewards {
         snezhnaya_gi_persistence::record_progress(player, "obtain", id, count);
     }
@@ -666,6 +670,9 @@ pub fn notify_transaction(
     }
     if change.resin_changed {
         crate::consumables::notify_resin(player, output);
+    }
+    if change.attendance_changed {
+        crate::attendance::notify(player, output);
     }
     let mut properties = currency_properties(items);
     if let Some(basic) = &player.basic_bin {
