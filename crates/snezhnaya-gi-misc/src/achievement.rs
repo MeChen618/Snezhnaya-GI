@@ -55,6 +55,24 @@ fn notify_updates(output: &MessageOutput, uid: u32, updates: Vec<Achievement>) {
             },
         );
     }
+    let removed_watcher_list: Vec<_> = updates
+        .iter()
+        .filter(|entry| {
+            entry.status() == Status::Finished
+                && ProgressionConfig::get().achievements[&entry.id].is_delete_watcher_after_finish
+        })
+        .map(|entry| entry.id)
+        .collect();
+    if !removed_watcher_list.is_empty() {
+        output.send(
+            uid,
+            "WatcherChangeNotify",
+            WatcherChangeNotify {
+                removed_watcher_list,
+                ..Default::default()
+            },
+        );
+    }
 }
 
 fn update_progress<'a>(

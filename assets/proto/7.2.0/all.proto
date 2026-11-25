@@ -41299,9 +41299,9 @@ message MIHMIPAKLGC {
 }
 
 // CmdId: 682
-message BOEJLFGODJJ {
-  repeated uint32 GIHGNHEPCMA = 4;
-  repeated uint32 FMJINGEABBA = 12;
+message WatcherChangeNotify {
+  repeated uint32 new_watcher_list = 4;
+  repeated uint32 removed_watcher_list = 12;
 }
 
 message OCPDAIFICJP {

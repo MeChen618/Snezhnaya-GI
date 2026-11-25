@@ -10,6 +10,15 @@ pub struct WatcherAllDataNotify {
     pub watcher_list: Vec<u32>,
 }
 
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct WatcherChangeNotify {
+    #[prost(uint32, repeated, tag = "4")]
+    pub new_watcher_list: Vec<u32>,
+    #[prost(uint32, repeated, tag = "12")]
+    pub removed_watcher_list: Vec<u32>,
+}
+
 #[derive(Clone, Copy, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct WatcherEventNotify {

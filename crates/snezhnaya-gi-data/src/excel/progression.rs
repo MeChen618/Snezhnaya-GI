@@ -27,6 +27,7 @@ pub struct AchievementConfig {
     pub progress: u32,
     pub finish_reward_id: u32,
     pub trigger_config: Trigger,
+    pub is_delete_watcher_after_finish: bool,
     is_disuse: bool,
 }
 
