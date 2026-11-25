@@ -5,6 +5,13 @@ include!("../gen/normal/_.rs");
 
 #[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
+pub struct ViewCodexReq {
+    #[prost(message, repeated, tag = "10")]
+    pub type_data_list: Vec<CodexTypeData>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct WatcherAllDataNotify {
     #[prost(uint32, repeated, tag = "12")]
     pub watcher_list: Vec<u32>,

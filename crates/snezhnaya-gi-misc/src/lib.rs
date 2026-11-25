@@ -10,6 +10,7 @@ use bevy_ecs::prelude::*;
 use common::player_cache::{cache_get_client_time, cache_get_is_pause, cache_set_is_pause};
 use common::time_util;
 use snezhnaya_gi_event::scene::*;
+use snezhnaya_gi_inventory::codex;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::Players;
 use snezhnaya_gi_proto::normal::{
@@ -27,6 +28,7 @@ impl Plugin for MiscPlugin {
                 (
                     progression::login,
                     achievement::login,
+                    codex::login,
                     activity::login,
                     mail::login,
                     daily_task::login,
@@ -42,6 +44,7 @@ impl Plugin for MiscPlugin {
                     daily_task::handle,
                     progression::handle,
                     achievement::handle,
+                    codex::handle,
                     activity::handle,
                     ley_line::handle,
                     ley_line::apply_monster_scaling,

@@ -1,3 +1,4 @@
+pub mod codex;
 pub mod common;
 pub mod daily_task;
 pub mod expedition;
@@ -110,6 +111,7 @@ macro_rules! excel_loader {
             production::ProductionConfig::load(excel_bin_output_path)?;
             expedition::ExpeditionConfig::load(excel_bin_output_path)?;
             progression::ProgressionConfig::load(excel_bin_output_path)?;
+            codex::CodexConfig::load(excel_bin_output_path)?;
             daily_task::DailyTaskConfig::load(excel_bin_output_path)?;
             ley_line_challenge::LeyLineConfig::load(excel_bin_output_path)?;
             shop::ShopConfig::load(excel_bin_output_path)?;

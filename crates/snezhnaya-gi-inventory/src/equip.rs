@@ -739,6 +739,7 @@ fn promote_weapon(
     }
     weapon.promote_level = next_level;
     let mut change = transact(player, &costs, &Amounts::new(), &[])?;
+    crate::codex::record_item(player, target.item_id, next_level, &mut change.codex_updates);
     commit_target(player, target, EquipType::Weapon, &mut change);
     notify_transaction(output, player, &change);
     Ok(WeaponPromoteRsp {

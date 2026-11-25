@@ -2,6 +2,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 
 pub mod attendance;
+pub mod codex;
 mod consumables;
 mod equip;
 mod gm;

@@ -113,7 +113,7 @@ pub fn item_add_handler(
                         format!("item {} failed: {}", item_id, i32::from(code)),
                     ));
                 }
-                Ok(change) => {
+                Ok(mut change) => {
                     for guid in &change.added {
                         let Some(item) = player
                             .item_bin
@@ -132,6 +132,13 @@ pub fn item_add_handler(
                                 for value in weapon.affix_map.values_mut() {
                                     *value = refinement.unwrap_or(1).clamp(1, 5) - 1;
                                 }
+                                let promote_level = weapon.promote_level;
+                                crate::codex::record_item(
+                                    player,
+                                    *item_id,
+                                    promote_level,
+                                    &mut change.codex_updates,
+                                );
                             }
                             Some(equip_bin::Detail::Reliquary(relic)) => {
                                 let config = &reliquary_excel_config_collection::get()[item_id];

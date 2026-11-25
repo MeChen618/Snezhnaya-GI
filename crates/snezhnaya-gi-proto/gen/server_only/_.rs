@@ -19662,6 +19662,9 @@ pub struct PlayerCodexCompBin {
     #[prost(uint32, tag = "7")]
     #[serde(skip_serializing_if = "crate::is_default")]
     pub last_read_pushtips_type_id: u32,
+    #[prost(uint32, repeated, tag = "10001")]
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub reliquary_part_id_list: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]

@@ -393,12 +393,15 @@ fn draw(
         &[],
     )?;
     for guid in &new_avatars {
-        for item in candidate.avatar_bin.as_ref().unwrap().avatar_map[guid]
+        let items: Vec<_> = candidate.avatar_bin.as_ref().unwrap().avatar_map[guid]
             .equip_map
             .values()
-        {
-            change.changed.push(item.guid);
-            change.added.push(item.guid);
+            .map(|item| (item.guid, item.item_id))
+            .collect();
+        for (guid, item_id) in items {
+            change.changed.push(guid);
+            change.added.push(guid);
+            snezhnaya_gi_inventory::codex::record_item(&mut candidate, item_id, 0, &mut change.codex_updates);
         }
     }
     state.total_count = state

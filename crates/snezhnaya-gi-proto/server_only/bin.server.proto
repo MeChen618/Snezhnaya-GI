@@ -3072,6 +3072,7 @@ message PlayerCodexCompBin {
   repeated uint32 recent_viewed_pushtips_list = 5;
   uint32 last_read_pushtips_codex_id = 6;
   uint32 last_read_pushtips_type_id = 7;
+  repeated uint32 reliquary_part_id_list = 10001;
 }
 
 message AchievementBin {

@@ -1144,6 +1144,7 @@ pub fn observe(
         if let Some(player) = players.get_mut(owner.0) {
             record_progress(player, "kill", 0, 1);
             record_progress(player, "kill", event.monster_id, 1);
+            snezhnaya_gi_inventory::codex::monster_killed(player, event.monster_id, &output);
             dirty.insert(player.uid);
         }
     }
@@ -1180,6 +1181,9 @@ pub fn observe(
             }
             super::activity::notify(player, &output);
             super::achievement::observe(player, &output, quest_changes.contains(&player.uid));
+            if quest_changes.contains(&player.uid) {
+                snezhnaya_gi_inventory::codex::refresh_quests(player, &output);
+            }
         }
     }
 }

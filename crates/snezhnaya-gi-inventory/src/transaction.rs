@@ -26,6 +26,7 @@ pub struct InventoryChange {
     pub rewards: Amounts,
     pub resin_changed: bool,
     pub attendance_changed: bool,
+    pub codex_updates: Vec<CodexDataUpdateNotify>,
     pub unlocked_name_cards: Vec<u32>,
     pub fetter_changed: Vec<u64>,
 }
@@ -510,6 +511,9 @@ fn transact_inner(
     }
     for (&id, &count) in rewards {
         snezhnaya_gi_persistence::record_progress(player, "obtain", id, count);
+        if count != 0 {
+            crate::codex::record_item(player, id, 0, &mut change.codex_updates);
+        }
     }
     Ok(change)
 }
@@ -674,6 +678,7 @@ pub fn notify_transaction(
     if change.attendance_changed {
         crate::attendance::notify(player, output);
     }
+    crate::codex::notify_updates(output, player.uid, &change.codex_updates);
     let mut properties = currency_properties(items);
     if let Some(basic) = &player.basic_bin {
         for (id, value) in [
