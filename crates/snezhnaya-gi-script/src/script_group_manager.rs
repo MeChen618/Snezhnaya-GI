@@ -75,7 +75,11 @@ pub fn refresh_daily_groups(
             snezhnaya_gi_data::scene::group_entity_state_cache::get_group_entity_state_cache()
                 .reset_group(owner.0, group_id);
         }
+        for regions in manager.player_regions.values_mut() {
+            regions.retain(|(group_id, _)| !event.group_ids.contains(group_id));
+        }
         manager.last_load.clear();
+        manager.last_region_entry.remove(&owner.0);
         if let Some(scene) = players.get(owner.0).and_then(|p| p.scene_bin.as_ref()) {
             if scene.my_cur_scene_id == 3 {
                 if let Some(position) = scene.my_cur_scene_pos {

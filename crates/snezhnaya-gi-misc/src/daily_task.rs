@@ -85,14 +85,14 @@ fn notify_world(players: &Players, owner: u32, out: &MessageOutput) {
         out.send_json(*uid, "WorldOwnerDailyTaskNotify", packet.clone());
     }
 }
-fn groups(tasks: &[b::DailyTaskInfoBin]) -> Vec<u32> {
+fn groups(cfg: &DailyTaskConfig, tasks: &[b::DailyTaskInfoBin]) -> Vec<u32> {
     tasks
         .iter()
-        .filter_map(|t| DailyTaskConfig::get().tasks.get(&t.daily_task_id))
+        .filter_map(|t| cfg.tasks.get(&t.daily_task_id))
         .flat_map(|t| t.new_group_vec.iter().copied())
         .collect()
 }
-fn refresh(player: &mut b::PlayerDataBin, time: u32) -> Option<Vec<u32>> {
+fn refresh(player: &mut b::PlayerDataBin, time: u32, cfg: &DailyTaskConfig) -> Option<Vec<u32>> {
     if !unlocked(player) {
         return None;
     }
@@ -105,23 +105,31 @@ fn refresh(player: &mut b::PlayerDataBin, time: u32) -> Option<Vec<u32>> {
     if state.last_time != 0 && day(state.last_time) == day(time) && !state.task_list.is_empty() {
         return None;
     }
-    let cfg = DailyTaskConfig::get();
     let level = player.basic_bin.as_ref()?.level;
-    let (city, ids) = cfg.draw(state.filter_city_id, player.uid, u64::from(day(time)))?;
-    let tasks = ids
-        .into_iter()
-        .map(|id| {
-            let reward = cfg.reward(&cfg.tasks[&id], level)?;
-            Some(b::DailyTaskInfoBin {
-                daily_task_id: id,
-                drop_id: reward.drop_id,
-                preview_reward_id: reward.preview_reward_id,
-                ..Default::default()
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let mut changed = groups(&state.task_list);
-    changed.extend(groups(&tasks));
+    let assignment = cfg
+        .draw(state.filter_city_id, player.uid, u64::from(day(time)))
+        .and_then(|(city, ids)| {
+            let tasks = ids
+                .into_iter()
+                .map(|id| {
+                    let reward = cfg.reward(&cfg.tasks[&id], level)?;
+                    Some(b::DailyTaskInfoBin {
+                        daily_task_id: id,
+                        drop_id: reward.drop_id,
+                        preview_reward_id: reward.preview_reward_id,
+                        ..Default::default()
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((city, tasks))
+        });
+    if assignment.is_none() && state.last_time == 0 && state.task_list.is_empty() {
+        return None;
+    }
+    let assigned = assignment.is_some();
+    let (city, tasks) = assignment.unwrap_or_default();
+    let mut changed = groups(cfg, &state.task_list);
+    changed.extend(groups(cfg, &tasks));
     changed.sort_unstable();
     changed.dedup();
     // 到期的待发奖励保留，背包满和重登都不会吞掉已完成的委托奖励。
@@ -131,12 +139,17 @@ fn refresh(player: &mut b::PlayerDataBin, time: u32) -> Option<Vec<u32>> {
             .filter(|t| !t.pending_reward_map.is_empty()),
     );
     state.task_list = tasks;
-    state.last_time = time;
-    state.score_player_level = level;
+    state.last_time = if assigned { time } else { 0 };
+    state.score_player_level = if assigned { level } else { 0 };
     state.is_taken_score_reward = false;
     state.finished_num = 0;
     state.random_city_id = city;
-    state.refresh_times = state.refresh_times.saturating_add(1);
+    if assigned {
+        if state.filter_city_id != 0 {
+            state.filter_city_id = city;
+        }
+        state.refresh_times = state.refresh_times.saturating_add(1);
+    }
     Some(changed)
 }
 fn refresh_all(
@@ -148,7 +161,7 @@ fn refresh_all(
 ) {
     let mut world_changed = false;
     for player in players.values_mut() {
-        if let Some(group_ids) = refresh(player, time) {
+        if let Some(group_ids) = refresh(player, time, DailyTaskConfig::get()) {
             if player.uid == owner {
                 changes.write(DailyTaskGroupsRefreshEvent {
                     owner_uid: owner,
@@ -173,7 +186,7 @@ pub(super) fn login(
     let time = now();
     for player in players.values_mut() {
         if unlocked(player) {
-            refresh(player, time);
+            refresh(player, time, DailyTaskConfig::get());
             if let Some(state) = &player.daily_task_bin {
                 let task_vars: Vec<_> = state
                     .task_var_map
@@ -265,7 +278,7 @@ fn claim_score(
     if !unlocked(player) {
         return Err(Retcode::RetPlayerLevelLessThan);
     }
-    if state.finished_num < TASK_COUNT {
+    if state.last_time == 0 || state.finished_num < TASK_COUNT {
         return Err(Retcode::RetDailyTaskNotFinish);
     }
     if state.is_taken_score_reward {
@@ -286,6 +299,7 @@ fn claim_score(
     inventory::notify_transaction(out, player, &change);
     Ok(rewards)
 }
+
 pub(super) fn handle(
     mut messages: MessageReader<ClientMessageEvent>,
     mut players: ResMut<Players>,
@@ -365,7 +379,7 @@ fn finish_task(players: &mut Players, owner: u32, index: usize) -> Result<(), Re
         let Some(state) = &player.daily_task_bin else {
             continue;
         };
-        if state.finished_num >= TASK_COUNT {
+        if state.last_time == 0 || state.finished_num >= TASK_COUNT {
             continue;
         }
         let reward = cfg
@@ -625,5 +639,68 @@ pub(super) fn observe(
             }
         }
         notify_world(&players, owner.0, &out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_new_day_assignment_expires_old_tasks_and_keeps_pending_rewards() {
+        let reset_time = 86_400 - 14_400;
+        let reward = b::DailyTaskRewardBin {
+            item_map: [(201, 10)].into(),
+        };
+        let mut player = b::PlayerDataBin {
+            uid: 42,
+            basic_bin: Some(b::PlayerBasicCompBin {
+                level: UNLOCK_LEVEL,
+                ..Default::default()
+            }),
+            daily_task_bin: Some(b::PlayerDailyTaskCompBin {
+                last_time: reset_time - 1,
+                finished_num: TASK_COUNT,
+                score_player_level: UNLOCK_LEVEL,
+                task_list: vec![b::DailyTaskInfoBin {
+                    daily_task_id: 1,
+                    is_finished: true,
+                    pending_reward_map: [(42, reward.clone())].into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let config = DailyTaskConfig {
+            tasks: [(
+                1,
+                DailyTask {
+                    new_group_vec: vec![100],
+                    ..Default::default()
+                },
+            )]
+            .into(),
+            cities: Default::default(),
+            levels: Default::default(),
+            rewards: Default::default(),
+            groups: Default::default(),
+        };
+        assert_eq!(refresh(&mut player, reset_time - 1, &config), None);
+        assert_eq!(refresh(&mut player, reset_time, &config), Some(vec![100]));
+        assert_eq!(refresh(&mut player, reset_time + 1, &config), None);
+        let state = player.daily_task_bin.as_ref().unwrap();
+        assert_eq!(state.last_time, 0);
+        assert_eq!(state.finished_num, 0);
+        assert!(state.task_list.is_empty());
+        assert_eq!(state.pending_task_rewards.len(), 1);
+        assert_eq!(
+            state.pending_task_rewards[0].pending_reward_map[&42],
+            reward
+        );
+        assert!(matches!(
+            claim_score(&mut player, false, &MessageOutput::new(HashMap::new())),
+            Err(Retcode::RetDailyTaskNotFinish)
+        ));
     }
 }

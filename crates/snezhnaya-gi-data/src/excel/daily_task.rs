@@ -51,6 +51,41 @@ pub struct DailyTaskConfig {
 }
 static CONFIG: OnceLock<DailyTaskConfig> = OnceLock::new();
 
+const TASK_COUNT: usize = 4;
+const DEFAULT_CITY: u32 = 1;
+
+fn select_tasks(tasks: &BTreeMap<u32, DailyTask>, pool: &[u32]) -> Option<Vec<u32>> {
+    fn fill(tasks: &BTreeMap<u32, DailyTask>, pool: &[u32], selected: &mut Vec<u32>) -> bool {
+        let needed = TASK_COUNT - selected.len();
+        if needed == 0 {
+            return true;
+        }
+        if pool.len() < needed {
+            return false;
+        }
+        for (index, &id) in pool.iter().take(pool.len() - needed + 1).enumerate() {
+            let groups = &tasks[&id].new_group_vec;
+            if selected.iter().any(|other| {
+                tasks[other]
+                    .new_group_vec
+                    .iter()
+                    .any(|group| groups.contains(group))
+            }) {
+                continue;
+            }
+            selected.push(id);
+            if fill(tasks, &pool[index + 1..], selected) {
+                return true;
+            }
+            selected.pop();
+        }
+        false
+    }
+
+    let mut selected = Vec::with_capacity(TASK_COUNT);
+    fill(tasks, pool, &mut selected).then_some(selected)
+}
+
 impl DailyTaskConfig {
     pub fn get() -> &'static Self {
         CONFIG.get().expect("daily task tables loaded")
@@ -68,30 +103,19 @@ impl DailyTaskConfig {
     }
     pub fn draw(&self, preferred: u32, uid: u32, day: u64) -> Option<(u32, Vec<u32>)> {
         let mut rng = rand::rngs::SmallRng::seed_from_u64((u64::from(uid) << 32) ^ day);
-        let cities: Vec<_> = self.cities.keys().copied().collect();
         let city = if preferred == 0 {
+            let cities: Vec<_> = self.cities.keys().copied().collect();
             *cities.choose(&mut rng)?
         } else if self.cities.contains_key(&preferred) {
             preferred
+        } else if self.cities.contains_key(&DEFAULT_CITY) {
+            DEFAULT_CITY
         } else {
-            1
+            *self.cities.keys().next()?
         };
         let mut pool = self.cities.get(&city)?.clone();
         pool.shuffle(&mut rng);
-        let mut used = HashSet::new();
-        let mut tasks = Vec::new();
-        for id in pool {
-            let task = &self.tasks[&id];
-            if task.new_group_vec.iter().any(|g| used.contains(g)) {
-                continue;
-            }
-            used.extend(task.new_group_vec.iter().copied());
-            tasks.push(id);
-            if tasks.len() == 4 {
-                return Some((city, tasks));
-            }
-        }
-        None
+        Some((city, select_tasks(&self.tasks, &pool)?))
     }
     pub fn load(root: &str) -> io::Result<()> {
         fn read<T: serde::de::DeserializeOwned>(root: &str, name: &str) -> io::Result<Vec<T>> {
@@ -149,7 +173,7 @@ impl DailyTaskConfig {
                 cities.entry(task.city_id).or_default().push(task.id);
             }
         }
-        cities.retain(|_, tasks| tasks.len() >= 4);
+        cities.retain(|_, pool| select_tasks(&tasks, pool).is_some());
         let _ = CONFIG.set(Self {
             tasks,
             cities,
@@ -164,5 +188,40 @@ impl DailyTaskConfig {
                 .collect(),
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn draw_falls_back_and_finds_four_compatible_tasks() {
+        let tasks = [vec![1, 2, 3, 4], vec![1], vec![2], vec![3], vec![4]]
+            .into_iter()
+            .enumerate()
+            .map(|(id, new_group_vec)| {
+                (
+                    id as u32,
+                    DailyTask {
+                        new_group_vec,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        assert!(select_tasks(&tasks, &[0, 1, 2, 3]).is_none());
+        let config = DailyTaskConfig {
+            tasks,
+            cities: BTreeMap::from([(2, vec![0, 1, 2, 3, 4])]),
+            levels: BTreeMap::new(),
+            rewards: BTreeMap::new(),
+            groups: HashSet::new(),
+        };
+        for day in 1..=16 {
+            let (city, mut tasks) = config.draw(DEFAULT_CITY, 42, day).unwrap();
+            tasks.sort_unstable();
+            assert_eq!((city, tasks), (2, vec![1, 2, 3, 4]));
+        }
     }
 }
