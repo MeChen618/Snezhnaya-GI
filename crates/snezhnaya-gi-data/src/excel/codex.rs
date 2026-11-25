@@ -7,6 +7,7 @@ pub struct CodexConfig {
     pub materials: HashMap<u32, u32>,
     pub books: HashMap<u32, u32>,
     pub quests: HashMap<u32, u32>,
+    viewpoints: HashMap<(u32, u32, u32, u32), u32>,
     pub monster_codex_ids: HashMap<u32, u32>,
     pub monster_variants: HashMap<u32, Vec<u32>>,
     pub reliquary_parts: HashMap<u32, Vec<u32>>,
@@ -22,6 +23,12 @@ pub fn reliquary_part(item_id: u32) -> u32 {
 impl CodexConfig {
     pub fn get() -> &'static Self {
         CONFIG.get().expect("codex tables loaded")
+    }
+
+    pub fn viewpoint(&self, scene: u32, group: u32, config: u32, gadget: u32) -> Option<u32> {
+        self.viewpoints
+            .get(&(scene, group, config, gadget))
+            .copied()
     }
 
     pub(super) fn load(root: &str) -> io::Result<()> {
@@ -113,11 +120,33 @@ impl CodexConfig {
             }
         }
 
+        #[derive(Default, Deserialize)]
+        #[serde(default, rename_all = "camelCase")]
+        struct Viewpoint {
+            #[serde(rename = "Id")]
+            id: u32,
+            scene_id: u32,
+            group_id: u32,
+            config_id: u32,
+            gadget_id: u32,
+            is_disuse: bool,
+        }
+        let viewpoints = rows::<Viewpoint>(root, "View")?
+            .into_iter()
+            .filter(|row| !row.is_disuse && row.id != 0)
+            .map(|row| {
+                (
+                    (row.scene_id, row.group_id, row.config_id, row.gadget_id),
+                    row.id,
+                )
+            })
+            .collect();
         let _ = CONFIG.set(Self {
             weapons: entries("Weapon", |row| row.weapon_id)?,
             materials: entries("Material", |row| row.material_id)?,
             books: entries("Books", |row| row.material_id)?,
             quests: entries("Quest", |row| row.parent_quest_id)?,
+            viewpoints,
             monster_codex_ids,
             monster_variants,
             reliquary_parts,

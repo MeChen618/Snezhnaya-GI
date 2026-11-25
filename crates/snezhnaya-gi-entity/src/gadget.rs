@@ -74,15 +74,17 @@ pub struct GadgetQueryReadOnly {
 pub fn notify_appear_gadget_entities(
     gadgets: Query<(GadgetQueryReadOnly, Option<&GroupId>, Option<&ConfigId>), Added<Visible>>,
     message_output: Res<MessageOutput>,
+    players: Res<Players>,
 ) {
     use snezhnaya_gi_proto::normal::*;
 
     let mut entity_list: Vec<SceneEntityInfo> = vec![];
+    let mut viewpoints = Vec::new();
 
     gadgets
         .iter()
         .for_each(|(gadget_data, group_id, config_id)| {
-            entity_list.push(SceneEntityInfo {
+            let info = SceneEntityInfo {
                 entity_type: ProtEntityType::ProtEntityGadget.into(),
                 entity_id: gadget_data.entity_id.0,
                 name: String::new(),
@@ -166,16 +168,50 @@ pub fn notify_appear_gadget_entities(
                     ..Default::default()
                 })),
                 ..Default::default()
-            });
+            };
+            if let (Some(group), Some(config)) = (group_id, config_id) {
+                if crate::viewpoint::is_viewpoint(gadget_data.gadget_id.0) {
+                    viewpoints.push((group.0, config.0, gadget_data.gadget_id.0, info));
+                    return;
+                }
+            }
+            entity_list.push(info);
         });
-    message_output.send_to_all(
-        "SceneEntityAppearNotify",
-        SceneEntityAppearNotify {
-            appear_type: VisionType::VisionBorn.into(),
-            param: 0,
-            entity_list,
-        },
-    );
+    if !entity_list.is_empty() {
+        message_output.send_to_all(
+            "SceneEntityAppearNotify",
+            SceneEntityAppearNotify {
+                appear_type: VisionType::VisionBorn.into(),
+                param: 0,
+                entity_list,
+            },
+        );
+    }
+    if viewpoints.is_empty() {
+        return;
+    }
+    for uid in players.keys().copied() {
+        let player = players.get(uid).unwrap();
+        let entity_list: Vec<_> = viewpoints
+            .iter()
+            .filter(|(group, config, gadget, _)| {
+                crate::viewpoint::codex_id(player, *group, *config, *gadget)
+                    .is_some_and(|id| !crate::viewpoint::discovered(player, id))
+            })
+            .map(|(_, _, _, info)| info.clone())
+            .collect();
+        if !entity_list.is_empty() {
+            message_output.send(
+                uid,
+                "SceneEntityAppearNotify",
+                SceneEntityAppearNotify {
+                    appear_type: VisionType::VisionBorn.into(),
+                    param: 0,
+                    entity_list,
+                },
+            );
+        }
+    }
 }
 
 pub fn run_if_gadget_entities_appeared(

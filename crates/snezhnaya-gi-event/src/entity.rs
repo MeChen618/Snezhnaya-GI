@@ -31,6 +31,13 @@ pub struct EntityFightPropChangeReasonNotifyEvent {
 pub struct GadgetInteractEvent(pub u32, pub u32, pub u32);
 
 #[derive(Message)]
+pub struct ViewpointDiscoverEvent {
+    pub player_uid: u32,
+    pub codex_id: u32,
+    pub gadget_entity_id: u32,
+}
+
+#[derive(Message)]
 pub struct GadgetStateChangeEvent {
     pub entity: Entity,
     pub state_id: u32,

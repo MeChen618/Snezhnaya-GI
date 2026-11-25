@@ -4,12 +4,13 @@ use snezhnaya_gi_data::excel::{
     codex::{reliquary_part, CodexConfig},
     common::QuestState,
 };
+use snezhnaya_gi_event::entity::ViewpointDiscoverEvent;
 use snezhnaya_gi_message::{event::ClientMessageEvent, output::MessageOutput};
 use snezhnaya_gi_persistence::{progress_counter, Players};
 use snezhnaya_gi_proto::{
     normal::{
         CodexDataFullNotify, CodexDataUpdateNotify, CodexType, CodexTypeData,
-        QueryCodexMonsterBeKilledNumReq, ViewCodexReq,
+        QueryCodexMonsterBeKilledNumReq, SceneEntityDisappearNotify, ViewCodexReq, VisionType,
     },
     server_only::{
         equip_bin, item_bin, CodexTypeDataBin, PlayerCodexCompBin, PlayerDataBin, Uint32PairBin,
@@ -121,6 +122,38 @@ pub fn record_item(
 pub fn notify_updates(output: &MessageOutput, uid: u32, updates: &[CodexDataUpdateNotify]) {
     for &update in updates {
         output.send(uid, "CodexDataUpdateNotify", update);
+    }
+}
+
+pub fn discover_viewpoints(
+    mut events: MessageReader<ViewpointDiscoverEvent>,
+    mut players: ResMut<Players>,
+    output: Res<MessageOutput>,
+) {
+    for event in events.read() {
+        let Some(player) = players.get_mut(event.player_uid) else {
+            continue;
+        };
+        let mut updates = Vec::new();
+        unlock(
+            player.codex_bin.get_or_insert_with(Default::default),
+            CodexType::CodexView,
+            event.codex_id,
+            0,
+            &mut updates,
+        );
+        if !updates.is_empty() {
+            notify_updates(&output, event.player_uid, &updates);
+            output.send(
+                event.player_uid,
+                "SceneEntityDisappearNotify",
+                SceneEntityDisappearNotify {
+                    entity_list: vec![event.gadget_entity_id],
+                    disappear_type: VisionType::VisionGatherEscape as i32,
+                    ..Default::default()
+                },
+            );
+        }
     }
 }
 

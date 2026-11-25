@@ -44,6 +44,7 @@ impl Plugin for MiscPlugin {
                     daily_task::handle,
                     progression::handle,
                     achievement::handle,
+                    codex::discover_viewpoints,
                     codex::handle,
                     activity::handle,
                     ley_line::handle,

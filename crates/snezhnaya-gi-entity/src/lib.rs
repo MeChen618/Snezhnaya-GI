@@ -31,6 +31,7 @@ pub mod play_team;
 pub mod team;
 pub mod transform;
 pub mod util;
+mod viewpoint;
 pub mod weapon;
 
 use crate::avatar::CurrentPlayerAvatarMarker;
@@ -451,13 +452,19 @@ pub fn handle_entity(
     mut gadget_interact_events: MessageWriter<GadgetInteractEvent>,
     mut update_separate_property_entity_events: MessageWriter<EntityPropertySeparateUpdateEvent>,
     mut lua_trigger_events: MessageWriter<LuaTriggerEvent>,
+    mut viewpoints: viewpoint::ViewpointInteraction,
 ) {
     for message in events.read() {
         match message.message_name() {
             "GadgetInteractReq" => {
                 if let Some(req) = message.decode::<GadgetInteractReq>() {
+                    let uid = message.sender_uid();
+                    if let Some(response) = viewpoints.interact(&index, uid, &req) {
+                        message_output.send(uid, "GadgetInteractRsp", response);
+                        continue;
+                    }
                     message_output.send(
-                        message.sender_uid(),
+                        uid,
                         "GadgetInteractRsp",
                         GadgetInteractRsp {
                             retcode: 0,

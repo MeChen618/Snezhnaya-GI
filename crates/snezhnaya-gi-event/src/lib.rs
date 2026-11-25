@@ -46,6 +46,7 @@ impl Plugin for EventRegistryPlugin {
             .add_message::<EntityDisappearEvent>()
             .add_message::<EntityFightPropChangeReasonNotifyEvent>()
             .add_message::<GadgetInteractEvent>()
+            .add_message::<ViewpointDiscoverEvent>()
             .add_message::<GadgetStateChangeEvent>()
             //lua
             .add_message::<LuaTriggerEvent>()
